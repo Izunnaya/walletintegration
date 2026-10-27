@@ -343,24 +343,46 @@ counterparty.
 
 ## Q13 — `pg` with hand-written SQL, not an ORM
 
-**Decided:** the driver is `pg` and queries are parameterised SQL written by
-hand.
+**Decided:** the driver is `pg` and queries are parameterised SQL written by hand.
 
-The transfer needs `SELECT ... FOR UPDATE` on specific rows, in a specific order,
-inside a transaction whose boundaries are visible in the code. Every ORM can be
-made to do that, through raw-query escape hatches, and what it then provides is a
-layer between the author and the one part of the system that must be exactly
-right.
+**The deciding reason is the constraints.** Every rule this design leans on is one Prisma's
+schema language cannot express:
 
-The earlier project here uses Prisma, and that is the correct choice there: it
-models records and relations and nothing hinges on lock ordering. This is the
-same reasoning reaching a different answer, not a reversal.
+```sql
+CHECK (balance_minor >= 0 OR is_system = TRUE)              -- invariant 1
+CREATE UNIQUE INDEX ... WHERE is_system = TRUE               -- one system wallet, ever
+CHECK ((entry_type = 'debit' AND amount_minor < 0) OR ...)   -- debits negative, credits positive
+CHECK (email = lower(btrim(email)))                          -- one normalisation rule
+CHECK (source_wallet_id <> destination_wallet_id)
+```
 
-The cost is more SQL to write and read, and no generated types for rows.
+Prisma has no CHECK constraints and no partial indexes. The evidence is in the earlier
+project here: its `schema.prisma` carries `@@index` and `@@unique` and nothing else,
+because there is nothing else to carry. Using Prisma would mean hand-editing SQL into
+`prisma migrate --create-only` output, so the constraints would still be hand-written —
+and `schema.prisma` would no longer describe the real schema, turning one source of truth
+into two that can disagree.
 
-**Ruled out:** Prisma; an ORM with raw queries for the transfer only, which is
-two mental models for one table.
-**Reversible:** expensive after the queries exist.
+**The second reason is the locks.** `SELECT ... FOR UPDATE` has no Prisma API; it is
+`$queryRaw` either way. So the most important statement in the service would be raw SQL
+inside an ORM, which puts a layer between the author and the one part that has to be
+exactly right, and buys nothing for it.
+
+**What it costs, stated fairly.** Prisma would be better for everything else here —
+registration, login, wallet reads, transfer history, block and unblock are plain CRUD, and
+generated row types beat hand-written ones. `prisma migrate` is better than the fifty-line
+runner in `src/migrate.ts`: it has drift detection and a shadow database, and this has
+neither. If the hard part of this service were records and relations rather than
+constraints and lock ordering, the answer would be Prisma.
+
+That is why the earlier project uses Prisma and this one does not. Same reasoning, different
+problem, different answer — not a reversal.
+
+**Ruled out:** Prisma; an ORM with raw queries for the transfer only, which is two mental
+models for one table; Knex, which is a query builder over the same hand-written SQL with an
+extra dependency.
+**Reversible:** expensive. The queries, the seed and twenty-one constraint tests are written
+against `pg`, and the constraints would have to be hand-written SQL regardless.
 
 ## Q14 — The repository is split into `server/` and `frontend/`
 
