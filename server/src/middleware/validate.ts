@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import type { ZodType } from "zod";
 import { describeIssues, transferRequestSchema } from "../domain/transferRequest.ts";
+import { loginRequestSchema, registerRequestSchema } from "../domain/authRequest.ts";
 
 // Where a malformed request is refused, before any financial work starts.
 //
@@ -31,3 +32,6 @@ const validateBody = (schema: ZodType) => (req: Request, res: Response, next: Ne
 // One exported validator per request type, so a route file reads as a list of what it
 // requires: authenticate, authorise, validate, controller.
 export const validateTransferRequest = validateBody(transferRequestSchema);
+
+export const validateRegisterRequest = validateBody(registerRequestSchema);
+export const validateLoginRequest = validateBody(loginRequestSchema);
