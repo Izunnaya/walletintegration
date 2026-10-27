@@ -87,8 +87,8 @@ npm run typecheck
 npm run build
 ```
 
-Both must pass. Once tests exist, `npm test` joins them, and a commit that breaks
-a test is not made.
+Both must pass, together with `npm test`. Vitest unit tests now exist, and a
+commit that breaks them is not made.
 
 There is no CI yet, so these are run by hand. Adding them as a GitHub Actions
 workflow is worth doing once there is a test suite for it to run.
@@ -143,12 +143,12 @@ Extended reasoning goes in DECISIONS.md, not into the source.
 
 ## Tests
 
-There are none right now, and that is a known gap rather than a position — see
-[Q2](DECISIONS.md) for how it happened and **Q15** in
-[OPEN-QUESTIONS.md](OPEN-QUESTIONS.md) for what has to be settled before the
-transfer lands.
+Vitest now covers pure money, request, fingerprint, and policy behavior. HTTP
+and PostgreSQL integration tests remain outstanding; see **Q15** in
+[OPEN-QUESTIONS.md](OPEN-QUESTIONS.md). Q26 in [DECISIONS.md](DECISIONS.md)
+records the current evidence and its limits.
 
-When they arrive:
+Test conventions:
 
 - **Pure functions get unit tests** beside them: amount parsing, request
   normalisation, fingerprinting, policy decisions.

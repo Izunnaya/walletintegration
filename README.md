@@ -30,32 +30,25 @@ looks over-careful, the question to ask is which one it protects.
    compensating entries.
 10. A timeout does not mean a transfer failed.
 
-**None of them is proven yet.** They are specified, and the schema and the
-transfer that enforce them are not built. Proving them needs the database and the
-concurrency tests.
+**The full guarantees are not proven yet.** Migration files, schemas, and pure
+rules exist. Proving financial behavior still needs the transaction implementation
+and real PostgreSQL concurrency tests.
 
 ## Where it stands
 
-Stage one of eleven: the HTTP foundation and the API contract. The financial core
-is designed and documented, not written.
+The HTTP foundation, seven SQL migrations, migration runner, connection pool
+module, Zod schemas, transfer policy, fingerprint helper, and 46 unit tests exist.
+The app currently mounts only the health route. Migration execution on a target
+database is not established by the existence of those files.
 
-| Built | Not yet built |
-| --- | --- |
-| `GET /health/live` | The seven tables and every constraint |
-| A UUID request ID on every response, repeated in every error body | The seed: system wallet, funded demo customers, blacklist, admin |
-| One error format for unknown routes and unexpected failures, both verified | The connection pool and `GET /health/ready` |
-| `.env` loading, `PORT` with a default | Deployment on Render |
-| The repository split into `server/` and `frontend/` | Registration, login, JWT, authorisation |
-| Branch, commit and documentation conventions | The atomic idempotent transfer |
-| | Transfer history, admin block and unblock, the audit trail |
-| | Rate limiting, reconciliation |
-| | Any automated test — see **Q15** |
+Seeding, readiness, deployment, authentication, wallet endpoints, the atomic
+idempotent transfer, history, admin restrictions, rate limits, and reconciliation
+remain to be built. [WALKTHROUGH.md](WALKTHROUGH.md) explains the actual files and
+limits; Q23?Q27 in [DECISIONS.md](DECISIONS.md) capture recent domain decisions.
 
-There is **no test command**. Eleven tests existed and were removed as a
-consequence of [Q2](DECISIONS.md); what replaced them is verification by hand,
-recorded in [server/README.md](server/README.md#verified-by-hand). That is
-affordable for one endpoint and is not affordable for the transfer, which is what
-**Q15** in [OPEN-QUESTIONS.md](OPEN-QUESTIONS.md) has to settle first.
+`npm test` runs Vitest from `server/`. The earlier HTTP tests described in Q2 were
+removed; the current unit suite tests pure behavior without importing the listening
+app. Q15 remains open for HTTP/PostgreSQL integration-test access.
 
 ## Running it locally
 
@@ -74,6 +67,8 @@ npm run dev              # http://localhost:3000
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run build` | Compiles `src/` to `dist/` |
 | `npm start` | Runs the compiled server |
+| `npm test` | Runs Vitest unit tests |
+| `npm run migrate` | Applies SQL migrations using DATABASE_URL |
 
 ```sh
 curl -i http://localhost:3000/health/live
@@ -95,7 +90,7 @@ different `PORT`.
 │       ├── routes/          One router per resource, wiring only
 │       ├── controllers/     One controller per resource, the work
 │       ├── middleware/      Request IDs, the error contract, later auth and validation
-│       └── models/          The database and the records. Nothing there yet
+│       └── models/          The pg connection pool; feature queries will follow
 ├── frontend/            Placeholder; nothing is built there yet
 ├── docs/                Architecture, domain and API documentation
 ├── DECISIONS.md         Settled questions, with what was ruled out

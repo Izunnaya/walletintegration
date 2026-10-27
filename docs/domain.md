@@ -55,7 +55,7 @@ and serialised to JSON as strings. No amount passes through a JavaScript
 
 A request supplies `amountMinor` as a positive integer string. Rejected on sight:
 zero, negatives, decimals, anything non-numeric, anything above the maximum
-(**Q16**, open), a currency mismatch, and a transfer where source and destination
+(currently 1,000,000,000 kobo; **Q16** remains open for product confirmation), a currency mismatch, and a transfer where source and destination
 are the same wallet.
 
 Naming carries the unit. `amountMinor`, `senderBalanceMinor` — never `amount` or
@@ -167,7 +167,12 @@ with another's.
 
 Stored with it is a fingerprint of the *normalised* details — source wallet,
 destination wallet, currency, amount — not the raw JSON, so the same intent
-formatted differently is still the same intent.
+formatted differently is still the same intent. This is request-content fingerprinting,
+not browser or device tracking. The current helper is `fingerprintTransfer`; the
+clearer proposed name is `createTransferRequestFingerprint`. The name and possible
+file move are recommendations, not implemented changes. See Q25 in
+[DECISIONS.md](../DECISIONS.md) and section 10 of
+[WALKTHROUGH.md](../WALKTHROUGH.md) for examples and limitations.
 
 | Situation | Result |
 | --- | --- |

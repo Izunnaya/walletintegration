@@ -234,7 +234,7 @@ the night before submission.
 
 ## Stack
 
-Node 22, Express 5, TypeScript 6 (strict), PostgreSQL. `dotenv` for
+Node 22, Express 5, TypeScript 5.9 (strict), PostgreSQL. `dotenv` for
 configuration. `pg` rather than an ORM, because the transfer needs explicit
 locks ([Q13](../DECISIONS.md)).
 

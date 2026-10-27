@@ -20,13 +20,15 @@ npm run dev              # http://localhost:3000
 | Command | What it does |
 | --- | --- |
 | `npm run dev` | Runs `src/index.ts` with `--watch`, restarting on save |
-| `npm run typecheck` | `tsc --noEmit` over `src/` |
+| `npm run typecheck` | `tsc --noEmit` over source and tests |
 | `npm run build` | Compiles `src/` to `dist/` |
 | `npm start` | Runs the compiled `dist/index.js` |
+| `npm test` | Runs Vitest unit tests |
+| `npm run migrate` | Applies ordered SQL migrations using DATABASE_URL |
 
-`npm run typecheck` and `npm run build` must both pass before a commit. There is
-no `npm test` yet — see **Q15** in
-[../OPEN-QUESTIONS.md](../OPEN-QUESTIONS.md).
+`npm test`, `npm run typecheck`, and `npm run build` must pass before committing
+completed code changes. There are currently 46 passing unit tests. PostgreSQL
+integration tests remain outstanding; see Q15 in [../OPEN-QUESTIONS.md](../OPEN-QUESTIONS.md).
 
 Node runs the TypeScript directly in development, so there is no transpiler in
 the dependency list. That is also why imports carry the real `.ts` extension and
@@ -59,7 +61,10 @@ src/
   middleware/
     requestId.ts                  a UUID per request, on req.requestId and X-Request-Id
     errorHandler.ts               respondNotFound and respondInternalError
-  models/                         the database and the records. Nothing here yet
+    validate.ts                   Zod validation; transfer route not wired yet
+  domain/                         amount/request schemas, policy, and fingerprint helper
+  models/db.ts                    one pg connection pool
+  migrate.ts                      SQL migration runner
 ```
 
 What each layer may do is in
@@ -81,20 +86,19 @@ Controllers still catch their own errors. The middleware is the backstop.
 
 ## What is built
 
-| Built | Not yet built |
-| --- | --- |
-| `GET /health/live` | Every other endpoint in [../docs/api.md](../docs/api.md) |
-| A UUID request ID on every response and in every error | The seven tables and their constraints |
-| The shared error format for 404 and 500, both verified | The pool, `/health/ready`, and deployment |
-| `.env` loading, and `PORT` with a default | Registration, login, JWT, authorisation |
-| | The transfer, idempotency, and locking |
-| | Rate limiting, the audit trail, reconciliation |
-| | Any automated test |
+The HTTP foundation, seven SQL migrations, migration runner, database pool module,
+Zod money/request schemas, pure transfer policy, request fingerprint helper, and
+46 unit tests exist. Read [../WALKTHROUGH.md](../WALKTHROUGH.md) for file-by-file
+reasoning and [../DECISIONS.md](../DECISIONS.md) Q23?Q27 for the domain decisions.
+
+Readiness, seeding, authentication, wallet endpoints, the transfer transaction,
+durable idempotency, admin endpoints, rate limits, reconciliation, and deployment
+are not implemented. Migration files existing does not prove a database was migrated.
 
 ## Verified by hand
 
-There is no test command yet, so these were run against the compiled build and
-are reproducible by repeating them:
+The following were earlier manual checks against the compiled build. The temporary
+`/boom` routes are not permanent API endpoints; unit tests do not reproduce these HTTP checks:
 
 ```
 GET /health/live -> 200  {"status":"ok"}  X-Request-Id: 35638df4-…
@@ -116,7 +120,8 @@ rather than about these checks.
 
 ## The database
 
-Not connected yet. When it is:
+The pool and migration runner exist. Database execution has not been verified in this
+documentation update. Financial operations and HTTP readiness are not connected yet:
 
 - Migrations live in `migrations/`, are applied in order, and are never edited
   once applied.
@@ -124,7 +129,8 @@ Not connected yet. When it is:
   fund demo balances twice.
 - `npm run reconcile` checks balances against the ledger in one read-only
   `REPEATABLE READ` transaction.
-- The pool is created in `models/`, and `index.ts` connects it before listening.
+- The pool is defined in `models/db.ts`; the migration runner imports it after loading
+  configuration. The current HTTP entry point does not connect it before listening.
 
 Schema conventions, the constraints, and why the system wallet may go negative
 are in [../docs/domain.md](../docs/domain.md).

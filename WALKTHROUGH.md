@@ -16,13 +16,19 @@ An Express 5 / TypeScript service with:
 - A UUID request ID on every response (`X-Request-Id`), also returned inside every error
 - One error format for unknown routes and for unexpected failures
 - `.env` loading through `dotenv`
+- Seven SQL migrations, a migration runner, and a `pg` connection pool
+- Reusable Zod schemas for integer-kobo amounts, NGN currency, and strict transfer requests
+- Pure transfer policy and SHA-256 transfer-request fingerprint helpers
+- 46 passing Vitest unit tests across the money and transfer test files
 
-**What does not exist yet:** no database, no migrations, no seed, no authentication, no wallets, no
-transfers, no idempotency, no locking, no reconciliation, no automated tests, no deployment.
+**What does not exist yet:** no seed, registration, login, wallet endpoints, transfer endpoint,
+transaction orchestration, durable idempotency execution, row-lock acquisition, reconciliation,
+readiness endpoint, or deployment.
 
-If asked "is it finished?" the answer is: this is stage one of the build spec's order — the foundation
-and the API contract. The financial core is designed and documented but not written. Do not imply
-otherwise; none of the ten invariants is provable without the database.
+Migration files and a pool module exist; that does not establish that a target database has been
+migrated or that the HTTP app connects to it. The app currently mounts only the health route.
+Unit tests establish pure-function behavior. Real PostgreSQL integration tests are still needed to
+prove transaction, locking, and concurrent-request behavior.
 
 ---
 
@@ -41,7 +47,7 @@ instant or the same request is retried.
 
 The repository is split into `server/` and `frontend/`, with nothing in the frontend yet. Inside the
 server the layout follows the same shape as the Restaurant backend: `index.ts` sets up and starts the
-app, and the work is split across `routes/`, `controllers/`, `middleware/`, with `models/` to come.
+app, and the work is split across `routes/`, `controllers/`, `middleware/`, plus database code in `models/` and pure rules in `domain/`.
 
 ```
 server/src/
@@ -50,6 +56,12 @@ server/src/
   controllers/HealthController.ts one controller per resource
   middleware/requestId.ts         gives each request an ID
   middleware/errorHandler.ts      the 404 and 500 responses
+  middleware/validate.ts          Zod request validation (not mounted on a transfer route yet)
+  models/db.ts                   PostgreSQL pool; requires DATABASE_URL when imported
+  migrate.ts                     ordered, transactional SQL migrations
+  domain/money.ts                Zod amount/currency schemas and string serialization
+  domain/transferRequest.ts      strict request schema and field-error formatting
+  domain/transferPolicy.ts       ordered policy checks and request fingerprint helper
 ```
 
 ### `server/src/index.ts`
@@ -154,8 +166,7 @@ internal detail. That same ID is in the server log line, so a user's report lead
 record of what actually happened. Without it, a 500 is unexplainable.
 
 **Why `randomUUID` and not a counter?** A counter restarts at 1 on every deploy, so the same ID would
-point at different requests over time, and two instances would hand out the same IDs. A UUID never
-collides.
+point at different requests over time, and two instances would hand out the same IDs. A UUID makes accidental collisions extremely unlikely; uniqueness is not an absolute guarantee.
 
 **Why generate it rather than read `X-Request-Id` from the caller?** A client could send the same ID
 on every request, or put junk in it, and the logs would be worthless. The server decides.
@@ -214,16 +225,19 @@ handler. Verified both paths.
 ```
 npm run dev        node --watch src/index.ts
 npm run typecheck  tsc --noEmit
-npm run build      tsc
+npm run build      tsc -p tsconfig.build.json
+npm test           vitest run
+npm run migrate    node src/migrate.ts
 npm start          node dist/index.js
 ```
 
-Two runtime dependencies, `express` and `dotenv`. Three development dependencies: `typescript` and the
-two type packages.
+Runtime dependencies: `express` handles HTTP; `dotenv` loads local environment files; `pg` talks to
+PostgreSQL; `zod` validates and normalizes external input. Development dependencies are TypeScript,
+Vitest, and Node/Express/pg type definitions.
 
 ### `tsconfig.json`
 
-Strict mode, compiles `server/src/` into `server/dist/`. All npm commands run from `server/`. Four settings are worth knowing if asked:
+Strict mode checks source and tests. `tsconfig.build.json` compiles only `server/src/` into `server/dist/`. All npm commands run from `server/`. Four settings are worth knowing if asked:
 
 - `strict` — the baseline.
 - `noUncheckedIndexedAccess` — indexing an array gives `T | undefined`, forcing the check. This matters
@@ -234,19 +248,39 @@ Strict mode, compiles `server/src/` into `server/dist/`. All npm commands run fr
 - `erasableSyntaxOnly` — bans TypeScript features that produce runtime code, such as enums. Required
   for Node to strip types safely.
 
+### Database files and failure handling
+
+`models/db.ts` defines one `pg` pool. It requires `DATABASE_URL` when imported and
+configures TLS for hosted connections. Pool construction alone does not prove a
+successful connection. A transaction must check out one client and pass it to all
+queries; calling the pool separately can put queries on different connections and
+escape transaction locks.
+
+`migrate.ts` loads configuration, imports the pool, checks out a client, and reads
+SQL migrations in filename order. It records applied filenames in `schema_migrations`.
+Each file and its tracking row commit in one transaction. A SQL failure rolls that
+file back and returns a nonzero exit status; previously committed files remain.
+Applied filenames are skipped on rerun. Applied SQL must not be edited: the runner
+does not checksum files to detect changes. It also has no migration-runner lock, so
+run one migrator at a time. A connection failure before the runner's try/finally
+is not covered by that cleanup block; do not claim comprehensive shutdown handling.
+
+The seven migrations define users, wallets, transfers, ledger entries, idempotency
+records, blacklist entries, and admin audit entries. They establish schema intent;
+execution, immutability enforcement, and concurrency behavior still require database
+verification. No seed funding or transfer is executed by the current HTTP service.
+
 ### Files not in git
 
 `.gitignore` excludes `node_modules/`, `dist/`, `.env`, logs, and the two guidance documents (the
 build spec and the development guide), since those are the brief rather than the deliverable.
-`.env.example` is committed and holds only `PORT=3000`.
+`.env.example` is committed and holds a port and a placeholder database URL. Real credentials belong in the ignored `.env` or deployment environment.
 
 ### Where the rest will go
 
-| Coming file | Job |
+| Planned file | Job |
 | --- | --- |
-| `server/src/models/db.ts` | One `pg` connection pool |
 | `src/middleware/auth.ts` | `verifyToken` (who are you), `requireRole` (are you allowed) |
-| `src/middleware/validate.ts` | Request validation, one exported array per request type |
 | `src/routes/AuthRoute.ts`, `WalletRoute.ts`, `TransferRoute.ts`, `AdminRoute.ts` | Wiring |
 | `src/controllers/…Controller.ts` | One per resource |
 | `src/controllers/TransferController.ts` | Owns the transfer transaction: claim key, lock, validate, write, commit |
@@ -291,27 +325,34 @@ request_failed { requestId: '072ac170-44f7-4a0d-b8c6-68b6d2b24b77', path: '/boom
 
 | Decision | Reason | Limitation |
 | --- | --- | --- |
-| One `index.ts`, no separate app file | One entry point to read, same as the last project | Nothing can import the app without starting a listener, so HTTP tests cannot run. Reopens when the transfer tests are needed |
-| No automated tests yet | Follows from the line above; there is also no pure logic to test yet | The spec's definition of done requires Postgres concurrency tests. See section 8 |
+| One `index.ts`, no separate app file | One entry point to read, same as the last project | Importing it starts a listener; isolated HTTP tests need a revised entry point or a process-based harness. Reopens when the transfer tests are needed |
+| Vitest for pure domain behavior | Schemas, fingerprints, and policy decisions are testable without importing the listening server | 46 unit tests do not prove locking, rollback, or idempotent transaction execution |
 | `console.error` rather than a logging library | Nothing to configure or defend | Log lines are not machine-parseable JSON, and there is no automatic per-request logging. Fine for one instance; revisit if the spec's structured-log requirement is pressed |
 | `dotenv` | The conventional choice, recognized without explanation | Loads but does not validate. On Render the variables come from the dashboard and no file is read |
-| `PORT` read inline with `|| 3000` | Nothing to explain | A malformed `PORT` is not caught. When `DATABASE_URL` and `JWT_SECRET` arrive, `index.ts` checks they exist and exits if not, because a service that starts without them fails every request |
+| `PORT` read inline with `|| 3000` | Nothing to explain | A malformed `PORT` is not caught. `models/db.ts` requires DATABASE_URL when imported; the HTTP entry point does not yet validate database or JWT configuration |
 | UUID request IDs, generated not accepted | The error format needs an ID the client can quote, and a counter collides across restarts and instances | A UUID is longer in logs |
 | One error middleware with a fixed 500 message | Internals must never reach the client, and Express's default leaks a stack trace | No error taxonomy yet; business errors get real codes as features land |
 | Money as `bigint` and kobo, strings in JSON | Floating point cannot represent `0.1` exactly, and rounding errors accumulate across transfers. JSON numbers are doubles, so a `bigint` must cross the wire as a string | Callers must handle strings, and every arithmetic path must avoid `number` |
 | `pg` rather than Prisma | The transfer needs `SELECT ... FOR UPDATE` with a specific lock order and an explicit transaction, which is raw SQL territory | More SQL written by hand than with an ORM |
+| Shared Zod amount and currency schemas | Request validation and direct callers share one definition; no custom parser-result adapter | Callers handle Zod's typed success/error result; validation does not prove database state is current |
+| Explicit transfer policy and result types | Ownership-first decisions and known rejection reasons are visible | Requires validated amounts and state supplied from locked database rows |
+| SHA-256 fingerprint of normalized request details | Detects different details under the same idempotency key | The hash alone does not prevent duplicates; unique constraints and the atomic transaction must enforce idempotency |
 | No graceful shutdown yet | The thing that needs closing is the database pool, so write it once | In-flight requests are cut on deploy until then |
 
 ---
 
 ## 6. What has and has not been verified
 
-Checked: `npm run typecheck` passes, `npm run build` passes, and the compiled server answers liveness,
-404 and both 500 paths with the documented format, with the error detail staying in the log.
+The latest code checks passed: `npm test` (46 tests in two files), `npm run typecheck`, and
+`npm run build`, all run from `server/`. Money tests cover accepted/rejected input, exact boundaries,
+whitespace and leading zeroes, and string serialization. Transfer tests cover strict request
+validation, stable fingerprints, changed details, and policy decisions including ownership first.
 
-Not checked, and do not claim otherwise: anything financial. No database exists. There are no
-automated tests, so every check above was run by hand and nobody else can reproduce it from a command.
-No load test and no security review has run.
+The earlier manual HTTP checks in section 4 are historical observations; `/boom` and `/boom-async`
+are not permanent public routes. No automated HTTP test currently reproduces those checks.
+
+No PostgreSQL integration, concurrency, crash, deployment, load, or security-review evidence is
+established by these unit checks. A migration runner existing is not proof it succeeded on a database.
 
 ---
 
@@ -373,8 +414,8 @@ Follow-ups:
 ## 8. Things not to claim
 
 - Do not say the invariants are proven. They are specified; proving them needs the database and tests.
-- Do not say it is tested. There are no automated tests right now. If asked, the honest answer is that
-  the HTTP behaviour was verified by hand, and the spec's concurrency tests come with the transfer.
+- Describe the tests precisely: 46 unit tests pass; HTTP checks were manual; database concurrency
+  and failure-recovery tests have not been established.
 - Do not claim performance or security properties. Nothing has been measured or reviewed.
 - Do not describe the planned rate limiting as production-grade. It will be in-memory and
   single-instance, and a restart resets it. More instances would need a shared store.
@@ -385,7 +426,7 @@ Follow-ups:
 
 ## 9. What comes next, in the spec's order
 
-1. Migrations: seven tables with every constraint, including `CHECK (balance >= 0 OR is_system = TRUE)`.
+1. Verify the seven existing migrations on a dedicated database, including constraints and repeat runs.
 2. Seed: the system funding wallet, demo customers funded through real ledger-backed transfers,
    blacklist entries, one admin. Running it twice must not fund twice.
 3. `/health/ready` and an early Render deploy, to surface configuration problems now rather than the
@@ -407,3 +448,93 @@ HTTP. Worth deciding then, not now.
 first request after a pause is slow and that is not a bug. Render's free PostgreSQL becomes
 inaccessible 30 days after creation, so if the review window could pass that date the database needs
 upgrading — "a live URL we can hit" has to actually answer.
+
+
+## 10. Explaining the domain changes
+
+### Why use Zod for money and requests?
+
+`amountMinorSchema` accepts a string, trims surrounding whitespace, checks ASCII digits, converts
+directly to `bigint`, then enforces positivity and the existing product maximum. Numbers, decimals,
+signs, and exponent notation are rejected. `" 000150000 "` becomes exactly `150000n` without modifying
+the caller's object. No conversion passes through `number`.
+
+`transferRequestSchema` composes this schema with wallet IDs and the NGN currency schema. It rejects
+unknown fields and infers `TransferRequest` from the validated output, so the amount is a `bigint` in
+that type. `describeIssues` supplies field names and messages for validation responses.
+
+We removed `parseAmountMinor`, `AmountParseResult`, and `AmountRejection`. They only translated Zod's
+existing success/error result into a second format. That translation required the switch statement;
+removing the adapter removed the switch. A `forEach` would iterate issues, and a return inside its
+callback would not return from the outer function. It was not the right replacement for choosing one
+error result.
+
+Direct use:
+
+```ts
+const result = amountMinorSchema.safeParse(input);
+if (result.success) {
+  const amountMinor = result.data; // bigint
+} else {
+  const issues = result.error.issues;
+}
+```
+
+**Current integration gap:** `validateTransferRequest` exists, but there is no transfer route. On
+success the middleware calls `next()` without passing `result.data` onward; `req.body` remains raw.
+Before a controller consumes it, define an explicit handoff of the validated output. Do not claim
+that wiring is complete or that the controller already receives a bigint.
+
+The current cap is 1,000,000,000 kobo (NGN 10,000,000). It predates this refactor; we preserved it.
+Q16 remains open for product confirmation. A transfer cap also does not guarantee that a recipient's
+accumulated balance cannot exceed PostgreSQL BIGINT. That needs consideration in the transaction.
+
+### Why keep the transfer policy types and if statements?
+
+`TransferPolicyInput` names the trusted state the function needs. `TransferPolicyResult` distinguishes
+approval from rejection, and `TransferRejection` limits rejection reasons to known values. These are
+the business function's contract; there is no existing Zod policy result being translated twice.
+
+Ownership is checked first so an unauthorized caller does not learn whether another account is
+blocked or short of funds. Same-wallet, system-wallet, restrictions, currency, and funds checks then
+run in order. Moving everything into a schema could obscure that order and mix request validation
+with decisions about database state.
+
+The function assumes a validated positive amount and correctly associated party/wallet records. It
+does not fetch records, verify their freshness, or take locks. The transaction must supply the
+matching records under locks. See Q24 in DECISIONS.md.
+
+### What does fingerprintTransfer mean in a web app?
+
+It hashes normalized transfer details, not a browser, device, user identity, or biometric. A web
+client may send a transfer, lose the reply, and retry. The idempotency key names the intended
+operation; its fingerprint checks whether the details still match that operation.
+
+For example, first send 100000 kobo with key `payment-123`. Retrying that key with the same normalized
+wallets, currency, and amount should replay the original result. Retrying it with 500000 kobo must
+return `409` under this project's build spec. A different key is a new intent even if the fingerprint
+is identical. The fingerprint is not globally unique per transfer.
+
+The helper joins source wallet, destination wallet, currency, and canonical bigint amount in fixed
+order with `|`, then hashes using Node's SHA-256. Validated numeric IDs, a fixed currency, and digit
+amounts cannot contain the separator. If those field types change, revisit the encoding. Hash
+collisions are theoretically possible; this is not a signature or authentication mechanism.
+
+**Naming:** "idempotency fingerprint" is established terminology in the
+[IETF Idempotency-Key draft, section 2.4](https://datatracker.ietf.org/doc/html/draft-ietf-httpapi-idempotency-key-header-08#section-2.4).
+That is a draft, not a final standard, and it does not prescribe a JavaScript function name. The
+clearer proposed name here is `createTransferRequestFingerprint`. The current code still calls it
+`fingerprintTransfer` in `transferPolicy.ts`; a dedicated `transferFingerprint.ts` would separate
+retry identity from transfer eligibility. Neither rename nor move has been implemented.
+
+The fingerprint helper is unit-tested. Durable idempotency, saved-result replay, and concurrent
+key coordination remain planned transaction behavior. See Q25 in DECISIONS.md.
+
+### How do we keep the work reviewable?
+
+Use a branch per feature, focused conventional commits, and relevant checks before committing.
+Guidance documents remain excluded from Git. Git author and committer were verified as
+`Izunnaya <ugorjimicheal.um@gmail.com>`; the automated assistant does not replace that identity.
+The Zod refactor branched from the existing unmerged domain implementation so it could preserve
+that work without merging unrelated changes into main. This is an exception to the normal
+branch-from-main rule; review the inherited commits when integrating it. See Q27.

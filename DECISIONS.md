@@ -390,6 +390,119 @@ audited before it was pushed rather than after.
 
 ---
 
+**Later correction to Q22's security observation:** the current `.env.example`
+was found to contain a credential-bearing hosted database URL during this review.
+It has been replaced with a local placeholder. The earlier audit statement above
+is historical, not an assurance about subsequent commits. The exposed credential
+needs rotation; replacing a file does not remove it from existing history. Remote
+exposure was not re-audited in this documentation pass.
+
+## Q23 ? Zod owns amount and request validation directly
+
+**Decided:** `amountMinorSchema` validates a trimmed digit string, converts directly to
+`bigint`, and enforces positivity and the existing cap. `currencySchema` defines NGN.
+`transferRequestSchema` composes them, rejects unknown fields, and supplies its inferred
+output type. Both schemas are in the current code.
+
+`parseAmountMinor`, `AmountParseResult`, and `AmountRejection` were removed at the user's
+request. Their switch mapped Zod issues into a second result format without adding a
+rule. Callers now consume `safeParse`'s success/data or error/issues directly. A loop
+would not simplify selecting one outcome; returning from a `forEach` callback would not
+return from the enclosing function.
+
+**Cost and limitation:** callers use Zod's error model. The validation middleware still
+needs an explicit handoff of parsed output when the transfer controller is implemented;
+currently it validates and calls next without replacing the raw body. This decision does
+not settle Q16: the existing NGN 10,000,000 cap was preserved, not newly approved.
+
+**Ruled out:** handwritten checks duplicated beside the schema; a second parser-result
+adapter; number coercion for money. **Reversible:** callers could adopt a new result
+contract later, but there is no current need for one.
+
+## Q24 ? Transfer eligibility remains explicit business logic
+
+**Decided:** keep `TransferPolicyInput`, `TransferPolicyResult`, `TransferRejection`, and
+the ordered conditions in `checkTransferPolicy`. These describe its actual business
+inputs and outcome; they are not duplicate representations of a Zod validation result.
+Ownership is checked first, followed by wallet/restriction/currency/funds rules.
+
+Zod validates request shape and amounts. Policy operates on supplied account and wallet
+state. Keeping the conditions visible makes rejection precedence reviewable and keeps
+unauthorized callers from learning restriction or balance details through later reasons.
+
+**Cost and limitation:** policy assumes a validated positive amount and party records
+associated with the supplied wallets. It cannot guarantee fresh balances or restrictions.
+The future transaction must obtain the correct state under locks. Unit tests prove
+supplied-state decisions, not concurrency safety.
+
+**Ruled out:** replacing policy with Zod refinements merely to remove if statements.
+**Reversible:** yes, provided ordering and rejection behavior remain deliberate.
+
+## Q25 ? The fingerprint identifies request details for safe retries
+
+**Decided:** retain SHA-256 over the normalized source wallet, destination wallet,
+currency, and bigint amount. Fixed order and `|` separators avoid ambiguous concatenation
+for the currently validated field types. Formatting differences normalize before hashing.
+It is not browser/device fingerprinting or caller authentication.
+
+The idempotency key identifies an intended operation. The fingerprint checks that retries
+under that key still contain the same details. The build spec requires `409` for changed
+details; identical details with a different key remain a new operation. A hash alone does
+not enforce idempotency: the unique key record, saved result, and atomic transaction must
+do that. Those parts are not implemented yet.
+
+**Naming:** the [IETF Idempotency-Key draft, section 2.4](https://datatracker.ietf.org/doc/html/draft-ietf-httpapi-idempotency-key-header-08#section-2.4)
+uses "idempotency fingerprint." This supports the terminology; it does not establish a
+mandatory function name or final standard. The project's status codes follow its build
+spec rather than adopting every recommendation in that draft.
+
+**Recommendation, not an implemented decision:** `createTransferRequestFingerprint` in
+`transferFingerprint.ts` would make the purpose clearer. Current code and tests still use
+`fingerprintTransfer` from `transferPolicy.ts`. The rename and move remain recommendations; this documentation update does not
+change the helper or its imports.
+
+**Cost and limitation:** SHA-256 collisions are theoretically possible. The encoding
+assumes fields cannot contain `|`; revisit it if IDs or currency rules change. Hashing
+provides no authentication or tamper-proof signature.
+
+**Ruled out:** hashing raw JSON formatting; treating equal fingerprints across different
+keys as duplicate operations. **Reversible:** rename/move is cheap; changing canonical
+encoding after fingerprints are stored requires backward-compatibility planning.
+
+## Q26 ? Vitest establishes pure behavior; database proof is still outstanding
+
+**Decided:** Vitest runs the unit tests via `npm test` from `server/`. Current verified
+result is 46 passing tests across money and transfer-policy/request/fingerprint tests.
+Typecheck includes tests; the build configuration compiles source only.
+
+The earlier Q2 history describes removed HTTP tests, not the absence of all tests today.
+Pure functions do not need to import the listening app, so they can be tested now while
+Q15 remains open for integration-test access.
+
+**Cost and limitation:** these tests do not establish row locks, concurrent key handling,
+rollback, database migration execution, or crash recovery. Real PostgreSQL tests remain
+required before financial guarantees can be claimed.
+
+**Ruled out:** claiming mocked or pure-state checks prove database guarantees.
+**Reversible:** the runner can change; behavioral evidence must be retained.
+
+## Q27 ? Feature branches and commits retain the user's identity
+
+**Decided:** keep separate feature branches, focused conventional commits, and relevant
+checks before completed changes are committed. Guidance documents stay local and ignored.
+Git author and committer were verified as `Izunnaya <ugorjimicheal.um@gmail.com>`.
+
+Normally branches begin from main, as CONTRIBUTING.md specifies. The Zod follow-up branch
+began at the existing unmerged domain implementation on `feature/database-migrations`.
+That preserved the user's current code without merging unrelated work into main. Treat
+this as a recorded exception and review the inherited commits during integration.
+
+**Cost and limitation:** stacked history requires care when merging. Local Git metadata
+records authorship; it is separate from remote account authentication or commit signing.
+**Ruled out:** attributing these commits to OpenAI; silently merging the database branch
+as part of a domain refactor. **Reversible:** future branch policy can change; published
+history should not be rewritten casually.
+
 ## What is still open
 
 | Question | Blocks |
