@@ -2,59 +2,77 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_TRANSFER_AMOUNT_MINOR,
   amountMinorToJson,
-  parseAmountMinor,
+  amountMinorSchema,
 } from "../src/domain/money.ts";
 
-describe("parseAmountMinor", () => {
+describe("amountMinorSchema", () => {
   it("accepts a positive integer string of kobo", () => {
-    expect(parseAmountMinor("150000")).toEqual({ ok: true, amountMinor: 150000n });
+    expect(amountMinorSchema.safeParse("150000")).toEqual({ success: true, data: 150000n });
   });
 
   it("accepts the maximum exactly", () => {
-    expect(parseAmountMinor(MAX_TRANSFER_AMOUNT_MINOR.toString())).toEqual({
-      ok: true,
-      amountMinor: MAX_TRANSFER_AMOUNT_MINOR,
+    expect(amountMinorSchema.safeParse(MAX_TRANSFER_AMOUNT_MINOR.toString())).toEqual({
+      success: true,
+      data: MAX_TRANSFER_AMOUNT_MINOR,
     });
   });
 
   it("refuses one kobo above the maximum", () => {
     const justOver = (MAX_TRANSFER_AMOUNT_MINOR + 1n).toString();
-    expect(parseAmountMinor(justOver)).toEqual({ ok: false, reason: "AMOUNT_ABOVE_MAXIMUM" });
+    expect(amountMinorSchema.safeParse(justOver)).toMatchObject({
+      success: false,
+      error: { issues: [{ message: `amountMinor must not exceed ${MAX_TRANSFER_AMOUNT_MINOR} kobo` }] },
+    });
   });
 
   it("refuses zero", () => {
-    expect(parseAmountMinor("0")).toEqual({ ok: false, reason: "AMOUNT_NOT_POSITIVE" });
+    expect(amountMinorSchema.safeParse("0")).toMatchObject({
+      success: false,
+      error: { issues: [{ message: "amountMinor must be greater than zero" }] },
+    });
   });
 
   it("refuses a number even when the value would be valid", () => {
-    expect(parseAmountMinor(150000)).toEqual({ ok: false, reason: "AMOUNT_NOT_A_STRING" });
+    expect(amountMinorSchema.safeParse(150000)).toMatchObject({
+      success: false,
+      error: { issues: [{ message: "amountMinor must be a string of kobo, not a number" }] },
+    });
   });
 
   it("refuses anything that is not a plain run of digits", () => {
     for (const input of ["", " ", "-1", "1.5", "1e4", "+1", "0x1f", "12a", "１５", "NaN"]) {
-      expect(parseAmountMinor(input)).toEqual({ ok: false, reason: "AMOUNT_NOT_AN_INTEGER" });
+      expect(amountMinorSchema.safeParse(input)).toMatchObject({
+        success: false,
+        error: { issues: [{ message: "amountMinor must contain digits only" }] },
+      });
     }
   });
 
   it("refuses null, undefined, objects and bigints", () => {
     for (const input of [null, undefined, {}, [], 10n, true]) {
-      expect(parseAmountMinor(input)).toEqual({ ok: false, reason: "AMOUNT_NOT_A_STRING" });
+      expect(amountMinorSchema.safeParse(input)).toMatchObject({
+        success: false,
+        error: { issues: [{ message: "amountMinor must be a string of kobo, not a number" }] },
+      });
     }
   });
 
   it("tolerates surrounding whitespace", () => {
-    expect(parseAmountMinor("  150000  ")).toEqual({ ok: true, amountMinor: 150000n });
+    expect(amountMinorSchema.safeParse("  150000  ")).toEqual({ success: true, data: 150000n });
   });
 
   it("normalises leading zeroes without changing the amount", () => {
-    expect(parseAmountMinor(" 000150000 ")).toEqual({ ok: true, amountMinor: 150000n });
-    expect(parseAmountMinor("000")).toEqual({ ok: false, reason: "AMOUNT_NOT_POSITIVE" });
+    expect(amountMinorSchema.safeParse(" 000150000 ")).toEqual({ success: true, data: 150000n });
+    expect(amountMinorSchema.safeParse("000")).toMatchObject({
+      success: false,
+      error: { issues: [{ message: "amountMinor must be greater than zero" }] },
+    });
   });
 
   it("rejects integer strings beyond the safe number range as above the product limit", () => {
-    expect(parseAmountMinor("9007199254740993")).toEqual({
-      ok: false,
-      reason: "AMOUNT_ABOVE_MAXIMUM",
+    expect(amountMinorSchema.safeParse("9007199254740993")).toMatchObject({
+      success: false,
+      error: { issues: [{ message: `amountMinor must not exceed ${MAX_TRANSFER_AMOUNT_MINOR} kobo` }] },
     });
   });
 

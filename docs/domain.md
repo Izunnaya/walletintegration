@@ -64,8 +64,8 @@ Naming carries the unit. `amountMinor`, `senderBalanceMinor` — never `amount` 
 `server/src/domain/money.ts` defines the reusable Zod amount and currency schemas.
 The amount schema trims whitespace, validates digits, converts directly to
 `bigint`, and checks the positive amount and existing transfer limit. The request
-schema composes these schemas; `parseAmountMinor` adapts their issues to the
-existing domain rejection codes. Both entry points use the same validation rules.
+schema composes these schemas directly. Callers use Zod's `safeParse` result
+for validation failures and the parsed `bigint` on success.
 See [Zod's schema documentation](https://zod.dev/api) for transforms and pipes.
 
 Transfer policy remains a sequence of explicit decisions using supplied state.
