@@ -38,7 +38,7 @@ try {
   run("node_modules/prisma/build/index.js", ["migrate", "deploy"], migrationEnvironment);
   run("node_modules/prisma/build/index.js", ["migrate", "deploy"], migrationEnvironment);
   run("node_modules/vitest/vitest.mjs", ["run", "--no-file-parallelism"], {
-    TEST_DATABASE_URL: testUrl.toString(),
+    DATABASE_URL: testUrl.toString(),
   });
 
   // Exercise the compiled seed and its schema-qualified report before adopting old data.
