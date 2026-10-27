@@ -1,5 +1,4 @@
-import assert from "node:assert/strict";
-import { describe, it } from "node:test";
+import { describe, expect, it } from "vitest";
 import {
   checkTransferPolicy,
   fingerprintTransfer,
@@ -23,8 +22,8 @@ describe("normaliseTransferRequest", () => {
   it("returns a typed request with the amount as a bigint", () => {
     const result = normaliseTransferRequest(validBody);
 
-    assert.equal(result.ok, true);
-    assert.deepEqual(result.ok && result.request, {
+    expect(result.ok).toBe(true);
+    expect(result.ok && result.request).toEqual({
       sourceWalletId: 7,
       destinationWalletId: 12,
       currency: "NGN",
@@ -34,7 +33,7 @@ describe("normaliseTransferRequest", () => {
 
   it("refuses a body that is not an object", () => {
     for (const body of [null, undefined, "x", 1, [], true]) {
-      assert.deepEqual(normaliseTransferRequest(body), {
+      expect(normaliseTransferRequest(body)).toEqual({
         ok: false,
         reason: "BODY_NOT_AN_OBJECT",
       });
@@ -43,7 +42,7 @@ describe("normaliseTransferRequest", () => {
 
   it("refuses a wallet id that is not a positive safe integer", () => {
     for (const id of [0, -1, 1.5, "7", null, undefined, Number.MAX_SAFE_INTEGER + 1]) {
-      assert.deepEqual(normaliseTransferRequest({ ...validBody, sourceWalletId: id }), {
+      expect(normaliseTransferRequest({ ...validBody, sourceWalletId: id })).toEqual({
         ok: false,
         reason: "SOURCE_WALLET_ID_INVALID",
       });
@@ -52,7 +51,7 @@ describe("normaliseTransferRequest", () => {
 
   it("refuses any currency other than NGN", () => {
     for (const currency of ["USD", "ngn", "", null, undefined]) {
-      assert.deepEqual(normaliseTransferRequest({ ...validBody, currency }), {
+      expect(normaliseTransferRequest({ ...validBody, currency })).toEqual({
         ok: false,
         reason: "CURRENCY_UNSUPPORTED",
       });
@@ -60,11 +59,11 @@ describe("normaliseTransferRequest", () => {
   });
 
   it("passes the amount rejection through unchanged", () => {
-    assert.deepEqual(normaliseTransferRequest({ ...validBody, amountMinor: "0" }), {
+    expect(normaliseTransferRequest({ ...validBody, amountMinor: "0" })).toEqual({
       ok: false,
       reason: "AMOUNT_NOT_POSITIVE",
     });
-    assert.deepEqual(normaliseTransferRequest({ ...validBody, amountMinor: 150000 }), {
+    expect(normaliseTransferRequest({ ...validBody, amountMinor: 150000 })).toEqual({
       ok: false,
       reason: "AMOUNT_NOT_A_STRING",
     });
@@ -73,8 +72,8 @@ describe("normaliseTransferRequest", () => {
   it("ignores fields it was not asked for", () => {
     const result = normaliseTransferRequest({ ...validBody, userId: 999, role: "admin" });
 
-    assert.equal(result.ok, true);
-    assert.deepEqual(Object.keys(result.ok ? result.request : {}).sort(), [
+    expect(result.ok).toBe(true);
+    expect(Object.keys(result.ok ? result.request : {}).sort()).toEqual([
       "amountMinor",
       "currency",
       "destinationWalletId",
@@ -92,7 +91,7 @@ describe("fingerprintTransfer", () => {
   });
 
   it("is stable for the same intent", () => {
-    assert.equal(fingerprintTransfer(request()), fingerprintTransfer(request()));
+    expect(fingerprintTransfer(request())).toBe(fingerprintTransfer(request()));
   });
 
   it("ignores how the client formatted the request", () => {
@@ -104,33 +103,21 @@ describe("fingerprintTransfer", () => {
       sourceWalletId: 7,
     });
 
-    assert.equal(reordered.ok, true);
-    assert.equal(
-      reordered.ok ? fingerprintTransfer(reordered.request) : "",
-      fingerprintTransfer(request()),
-    );
+    expect(reordered.ok).toBe(true);
+    expect(reordered.ok ? fingerprintTransfer(reordered.request) : "").toBe(fingerprintTransfer(request()));
   });
 
   it("changes when the amount changes", () => {
-    assert.notEqual(
-      fingerprintTransfer({ ...request(), amountMinor: 150001n }),
-      fingerprintTransfer(request()),
-    );
+    expect(fingerprintTransfer({ ...request(), amountMinor: 150001n })).not.toBe(fingerprintTransfer(request()));
   });
 
   it("changes when the direction is reversed", () => {
-    assert.notEqual(
-      fingerprintTransfer({ ...request(), sourceWalletId: 12, destinationWalletId: 7 }),
-      fingerprintTransfer(request()),
-    );
+    expect(fingerprintTransfer({ ...request(), sourceWalletId: 12, destinationWalletId: 7 })).not.toBe(fingerprintTransfer(request()));
   });
 
   it("cannot be confused by field values that run together", () => {
     // Without a separator, (1, 23) and (12, 3) would hash to the same value.
-    assert.notEqual(
-      fingerprintTransfer({ ...request(), sourceWalletId: 1, destinationWalletId: 23 }),
-      fingerprintTransfer({ ...request(), sourceWalletId: 12, destinationWalletId: 3 }),
-    );
+    expect(fingerprintTransfer({ ...request(), sourceWalletId: 1, destinationWalletId: 23 })).not.toBe(fingerprintTransfer({ ...request(), sourceWalletId: 12, destinationWalletId: 3 }));
   });
 });
 
@@ -162,11 +149,11 @@ describe("checkTransferPolicy", () => {
   });
 
   it("allows a transfer that breaks no rule", () => {
-    assert.deepEqual(checkTransferPolicy(input()), { allowed: true });
+    expect(checkTransferPolicy(input())).toEqual({ allowed: true });
   });
 
   it("refuses a wallet the caller does not own", () => {
-    assert.deepEqual(checkTransferPolicy(input({ authenticatedUserId: 99 })), {
+    expect(checkTransferPolicy(input({ authenticatedUserId: 99 }))).toEqual({
       allowed: false,
       reason: "NOT_WALLET_OWNER",
     });
@@ -183,75 +170,51 @@ describe("checkTransferPolicy", () => {
       }),
     );
 
-    assert.deepEqual(result, { allowed: false, reason: "NOT_WALLET_OWNER" });
+    expect(result).toEqual({ allowed: false, reason: "NOT_WALLET_OWNER" });
   });
 
   it("refuses a transfer to the same wallet", () => {
-    assert.deepEqual(
-      checkTransferPolicy(input({ destinationWallet: wallet({ id: 7, ownerId: 1 }) })),
-      { allowed: false, reason: "SAME_WALLET" },
-    );
+    expect(checkTransferPolicy(input({ destinationWallet: wallet({ id: 7, ownerId: 1 }) }))).toEqual({ allowed: false, reason: "SAME_WALLET" });
   });
 
   it("refuses the system wallet on either side", () => {
-    assert.deepEqual(
-      checkTransferPolicy(input({ sourceWallet: wallet({ id: 7, ownerId: 1, isSystem: true }) })),
-      { allowed: false, reason: "SYSTEM_WALLET_NOT_TRANSFERABLE" },
-    );
-    assert.deepEqual(
-      checkTransferPolicy(
+    expect(checkTransferPolicy(input({ sourceWallet: wallet({ id: 7, ownerId: 1, isSystem: true }) }))).toEqual({ allowed: false, reason: "SYSTEM_WALLET_NOT_TRANSFERABLE" });
+    expect(checkTransferPolicy(
         input({ destinationWallet: wallet({ id: 12, ownerId: 2, isSystem: true }) }),
-      ),
-      { allowed: false, reason: "SYSTEM_WALLET_NOT_TRANSFERABLE" },
-    );
+      )).toEqual({ allowed: false, reason: "SYSTEM_WALLET_NOT_TRANSFERABLE" });
   });
 
   it("refuses a blocked or blacklisted sender", () => {
-    assert.deepEqual(checkTransferPolicy(input({ sender: party({ isBlocked: true }) })), {
+    expect(checkTransferPolicy(input({ sender: party({ isBlocked: true }) }))).toEqual({
       allowed: false,
       reason: "SENDER_BLOCKED",
     });
-    assert.deepEqual(checkTransferPolicy(input({ sender: party({ isBlacklisted: true }) })), {
+    expect(checkTransferPolicy(input({ sender: party({ isBlacklisted: true }) }))).toEqual({
       allowed: false,
       reason: "SENDER_BLACKLISTED",
     });
   });
 
   it("refuses a blocked or blacklisted recipient, so a restriction stops both directions", () => {
-    assert.deepEqual(
-      checkTransferPolicy(input({ recipient: party({ userId: 2, isBlocked: true }) })),
-      { allowed: false, reason: "RECIPIENT_BLOCKED" },
-    );
-    assert.deepEqual(
-      checkTransferPolicy(input({ recipient: party({ userId: 2, isBlacklisted: true }) })),
-      { allowed: false, reason: "RECIPIENT_BLACKLISTED" },
-    );
+    expect(checkTransferPolicy(input({ recipient: party({ userId: 2, isBlocked: true }) }))).toEqual({ allowed: false, reason: "RECIPIENT_BLOCKED" });
+    expect(checkTransferPolicy(input({ recipient: party({ userId: 2, isBlacklisted: true }) }))).toEqual({ allowed: false, reason: "RECIPIENT_BLACKLISTED" });
   });
 
   it("refuses a currency mismatch", () => {
-    assert.deepEqual(
-      checkTransferPolicy(
+    expect(checkTransferPolicy(
         input({ destinationWallet: wallet({ id: 12, ownerId: 2, currency: "USD" }) }),
-      ),
-      { allowed: false, reason: "CURRENCY_MISMATCH" },
-    );
+      )).toEqual({ allowed: false, reason: "CURRENCY_MISMATCH" });
   });
 
   it("refuses an amount above the balance", () => {
-    assert.deepEqual(
-      checkTransferPolicy(
+    expect(checkTransferPolicy(
         input({ sourceWallet: wallet({ id: 7, ownerId: 1, balanceMinor: 149999n }) }),
-      ),
-      { allowed: false, reason: "INSUFFICIENT_FUNDS" },
-    );
+      )).toEqual({ allowed: false, reason: "INSUFFICIENT_FUNDS" });
   });
 
   it("allows spending the balance down to exactly zero", () => {
-    assert.deepEqual(
-      checkTransferPolicy(
+    expect(checkTransferPolicy(
         input({ sourceWallet: wallet({ id: 7, ownerId: 1, balanceMinor: 150000n }) }),
-      ),
-      { allowed: true },
-    );
+      )).toEqual({ allowed: true });
   });
 });
