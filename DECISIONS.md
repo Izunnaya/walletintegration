@@ -356,6 +356,38 @@ of kobo — so they are not rediscovered.
 repositories, which would split the history of one product.
 **Reversible:** yes, a directory move.
 
+## Q22 — The repository is public
+
+**Decided:** public, and it stays public. Verified rather than assumed —
+`repos/Izunnaya/walletdemo` reports `private=false`.
+
+A reviewer opens the link and reads the code with no account, no invitation and
+no extra step. For a take-home that is the whole point: friction in getting to
+the work counts against the work.
+
+It is only a safe answer because nothing in the repository needs protecting, and
+that was checked before the first push rather than afterwards. Across the entire
+history — every commit, not just the current files — the build spec and the
+development guide were never committed, `.env` was never committed at either
+path, and `server/.env.example` holds only `PORT=3000`. The `.gitignore`
+excluded the two guidance documents from the very first commit.
+
+The consequence worth being deliberate about: [DECISIONS.md](DECISIONS.md) and
+[OPEN-QUESTIONS.md](OPEN-QUESTIONS.md) are readable by anyone with the link.
+That is an argument for keeping them honest rather than for hiding them — a
+decision record that admits [Q2](#q2--one-entry-file-there-is-no-separate-app-module)
+cost the test suite reads better than one that omits it. But it does mean a
+half-written entry is public too, so an entry lands finished or not at all.
+
+When secrets do arrive they live in Render environment variables, never in the
+repository, and that rule does not change with visibility.
+
+**Ruled out:** private with the reviewer invited, which adds a step and gains
+nothing while there is nothing to protect.
+**Reversible:** yes, instantly, in the repository settings. What a force-push
+cannot reverse is anything already published, which is why the history was
+audited before it was pushed rather than after.
+
 ---
 
 ## What is still open

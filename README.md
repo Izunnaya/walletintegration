@@ -115,7 +115,7 @@ nothing in the frontend folder.
 | [docs/domain.md](docs/domain.md) | What a wallet, transfer and ledger entry are; the rules on money; known versus unknown failures |
 | [docs/api.md](docs/api.md) | Every endpoint: success shapes, the error shape, and which status code means what |
 | [DECISIONS.md](DECISIONS.md) | Every settled decision, with the reasoning, what was ruled out, and whether it can be undone |
-| [OPEN-QUESTIONS.md](OPEN-QUESTIONS.md) | The eight questions still open, with the options and what each costs |
+| [OPEN-QUESTIONS.md](OPEN-QUESTIONS.md) | The seven questions still open, with the options and what each costs |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to make and land a change |
 | [server/README.md](server/README.md) | API detail: commands, environment, structure, and what has actually been verified |
 | [WALKTHROUGH.md](WALKTHROUGH.md) | A file-by-file walk through the implementation, written to be explained out loud |
@@ -129,7 +129,7 @@ wins and the conflict is recorded rather than quietly resolved.
 A question raised while building goes into **OPEN-QUESTIONS.md** with its
 options, what each costs, and what it blocks. When it is answered it moves to
 **DECISIONS.md**, keeping its Q-number, with the reasoning and what was ruled
-out. Fourteen are settled; eight are open.
+out. Fifteen are settled; seven are open.
 
 The point of keeping the rejected options is that a later reader can tell a
 deliberate trade-off from an oversight. Two of the settled ones went against the

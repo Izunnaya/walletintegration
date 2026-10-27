@@ -213,25 +213,3 @@ submission date is known. The decision needs a date that does not exist yet.
 **Blocks:** the deployment claim at submission. **Depends on:** when the review
 window is.
 
-## Q22 — Is the GitHub repository public or private?
-
-**The gap.** The repository at `github.com/Izunnaya/walletdemo` now carries the
-full history. Whether it is public was not checked before pushing.
-
-Nothing sensitive is in it — the build spec and the development guide were
-excluded from every commit by `.gitignore`, no `.env` was ever committed, and
-`server/.env.example` holds only `PORT=3000`, all verified across the whole
-history before the push. So this is a question about audience, not exposure.
-
-**The options.**
-
-- **Public.** A reviewer opens the link with no further steps. The decisions and
-  open questions in this repository are readable by anyone, which is fine if they
-  are good and a liability if they are half-written.
-- **Private, with the reviewer invited.** One more step for them, and the work
-  stays unindexed.
-
-**Recommended:** whichever the reviewer's instructions ask for. If they do not
-say, public is less friction and nothing here needs protecting.
-
-**Blocks:** nothing. Worth settling before the link is sent.
