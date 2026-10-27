@@ -14,10 +14,19 @@ if (!connectionString) {
   throw new Error("DATABASE_URL is not set. The service cannot start without a database.");
 }
 
-const isLocal = connectionString.includes("localhost") || connectionString.includes("127.0.0.1");
+const url = new URL(connectionString);
+
+// sslmode and channel_binding are libpq parameters. node-postgres does not implement
+// channel binding, and it warns that it currently treats sslmode=require as verify-full
+// but will stop. Dropping both and configuring TLS below means the behaviour is stated
+// here rather than inherited from a string a hosting provider generated.
+url.searchParams.delete("sslmode");
+url.searchParams.delete("channel_binding");
+
+const isLocal = url.hostname === "localhost" || url.hostname === "127.0.0.1";
 
 export const pool = new Pool({
-  connectionString,
-  // Hosted Postgres requires TLS. Certificate verification stays on.
+  connectionString: url.toString(),
+  // Hosted Postgres requires TLS, with the certificate verified against a real CA.
   ssl: isLocal ? false : { rejectUnauthorized: true },
 });
