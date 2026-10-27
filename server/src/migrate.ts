@@ -4,8 +4,6 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const { pool } = await import("./models/db.ts");
-
 // Migrations are plain SQL files applied in filename order.
 //
 // Each file runs inside its own transaction together with the row that records it, so a
@@ -17,6 +15,9 @@ const { pool } = await import("./models/db.ts");
 const migrationsDirectory = path.join(import.meta.dirname, "..", "migrations");
 
 const applyMigrations = async () => {
+  // Imported here, not at the top, so a missing DATABASE_URL prints one clear line
+  // instead of a stack trace from module loading.
+  const { pool } = await import("./models/db.ts");
   const client = await pool.connect();
 
   try {
