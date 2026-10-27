@@ -1,5 +1,32 @@
 # Development Walkthrough
 
+## Seed command: transaction outcome versus report output
+
+`server/src/seed.ts` applies the seed in a transaction, waits for `COMMIT`, then
+prints the result. Its error handlers follow those phases so a reporting error
+cannot be described as a rolled-back seed.
+
+- If `BEGIN` or `applySeed` fails, attempt `ROLLBACK`, skip the report, and exit
+  with an error. The existing seed integration tests cover real database behavior;
+  the new command tests only verify which operations the script requests.
+- If `COMMIT` throws, do not claim that the seed was rolled back or saved. The
+  command reports that the commit was not acknowledged and the outcome may be
+  unknown. Rerunning the repeatable seed resolves the result without funding twice.
+- After an acknowledged commit, printing or report-query failures say explicitly
+  that the seed changes are saved. They produce a nonzero exit status because the
+  command did not complete its report, but never attempt rollback.
+- The client is released and the pool closed in `finally` after these phases.
+
+`await runSeed().catch(...)` lets the command finish before module evaluation
+completes, which also lets the command tests await its actual result.
+
+Verification for this change: 50 tests passed across `seedCommand.test.ts`,
+`money.test.ts`, and `transferPolicy.test.ts`; typecheck and build passed.
+The four command tests mock database operations and inject application/report/
+commit errors. They do not simulate a process crash or real network failure.
+The PostgreSQL schema and seed suites were not rerun for this command-only change.
+See Q28 in DECISIONS.md.
+
 Preparation document for defending this build. Everything here is in the code today or is a design
 decision I can point to in the build spec. Nothing in it is a claim the code does not support.
 

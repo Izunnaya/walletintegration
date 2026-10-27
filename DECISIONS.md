@@ -1,5 +1,29 @@
 # Decisions
 
+## Q28 - Seed reporting cannot roll back committed data
+
+**Decided:** separate write, commit, and reporting failure handling in
+`server/src/seed.ts`. A failure while applying the seed attempts rollback. A
+commit error reports an unacknowledged outcome without claiming rollback. After
+an acknowledged commit, report failures explicitly state that the changes are
+saved and suggest rerunning the repeatable seed to print the report.
+
+**Reason:** the old shared catch attempted rollback even if a report failed
+after commit. A rollback at that point cannot undo saved data and gives the wrong
+impression of the financial result. This protects invariant 10: losing an
+acknowledgement does not establish failure.
+
+**Trade-off:** reporting failure still sets exit status 1, while its message
+distinguishes that from a write failure. Operators must read that outcome rather
+than interpreting every nonzero exit as no changes saved. Automatic retries and
+generic transaction wrappers were unnecessary for this correction.
+
+**Evidence:** four focused mocked command tests cover successful commit before
+reporting, write failure/rollback, reporting failure after commit, and commit
+acknowledgement loss. These establish control flow and messages, not PostgreSQL
+atomicity or crash behavior. Existing funding references and database constraints
+continue to provide seed repeatability; this change does not alter them.
+
 Settled questions, with the reasoning behind them. Each entry says what was
 ruled out as well as what was chosen, so a later reader can tell a deliberate
 trade-off from an oversight.

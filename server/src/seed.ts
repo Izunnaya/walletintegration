@@ -13,27 +13,47 @@ const runSeed = async () => {
   const client = await pool.connect();
 
   try {
-    await client.query("BEGIN");
-    const { funded } = await applySeed(client);
-    await client.query("COMMIT");
+    let funded: string[];
 
-    console.log(
-      funded.length === 0
-        ? "Seed already applied. No balances changed."
-        : `Funded ${funded.length} wallet(s): ${funded.join(", ")}`,
-    );
+    try {
+      await client.query("BEGIN");
+      const seedResult = await applySeed(client);
+      funded = seedResult.funded;
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => undefined);
+      throw error;
+    }
 
-    await reportState(client);
-  } catch (error) {
-    await client.query("ROLLBACK").catch(() => undefined);
-    throw error;
+    try {
+      await client.query("COMMIT");
+    } catch (error) {
+      throw new Error(
+        "Seed commit was not acknowledged. The outcome may be unknown; rerun the seed to confirm without funding twice.",
+        { cause: error },
+      );
+    }
+
+    try {
+      console.log(
+        funded.length === 0
+          ? "Seed already applied. No balances changed."
+          : `Funded ${funded.length} wallet(s): ${funded.join(", ")}`,
+      );
+
+      await reportState(client);
+    } catch (error) {
+      throw new Error(
+        "Seed committed, but reporting failed. The seed changes are saved; rerun the seed to print the report without funding twice.",
+        { cause: error },
+      );
+    }
   } finally {
     client.release();
     await pool.end();
   }
 };
 
-runSeed().catch((error) => {
+await runSeed().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
   process.exitCode = 1;
 });
