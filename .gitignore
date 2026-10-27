@@ -8,3 +8,5 @@ coverage/
 .qodo/
 /Wallet_Service_Development_Guide.md
 /Wallet Service Build Spec*.md
+
+/server/src/generated/

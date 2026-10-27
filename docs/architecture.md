@@ -130,8 +130,8 @@ because a response that has begun cannot be replaced.
 
 ### `models/` — the records
 
-Empty today. It will hold the connection pool and the code that reads and writes
-each record.
+Contains the shared Prisma client, adapter configuration, and seed operations.
+Model definitions and migrations live under server/prisma; generated code is ignored.
 
 A model knows about storage and about the rules that make a record valid. It
 knows nothing about HTTP: no request, no response, no status codes. That way the
@@ -234,11 +234,12 @@ the night before submission.
 
 ## Stack
 
-Node 22, Express 5, TypeScript 5.9 (strict), PostgreSQL. `dotenv` for
-configuration. `pg` rather than an ORM, because the transfer needs explicit
-locks ([Q13](../DECISIONS.md)).
+Node 22, Express 5, strict TypeScript, PostgreSQL, Prisma 7, Zod, dotenv, and
+Vitest. Prisma's pg adapter owns the underlying connection pool. Models preserve
+existing SQL table names and bigint money. Custom migration SQL preserves CHECK
+constraints and the partial index; future row locks run through the transaction
+client's parameterized raw-query API. See Q13 and [the Prisma workflow](prisma.md).
 
-Node runs the TypeScript directly in development, which is why imports carry the
-real `.ts` extension and type-only imports must say `import type` — an unmarked
-type import would make Node try to import a value Express does not export.
-`npm run build` compiles to `dist/` for deployment.
+Node runs source TypeScript in development. Client generation runs on install/build,
+and compilation rewrites source imports to JavaScript for deployment. Generated
+Prisma Client files are never edited or committed.

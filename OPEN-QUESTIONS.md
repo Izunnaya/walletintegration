@@ -56,58 +56,6 @@ option is the cheapest route to it.
 **Blocks:** the transfer, and the claim that the invariants have been
 demonstrated. **Depends on:** nothing — it can be decided now.
 
-## Q16 — What is the maximum transfer amount?
-
-**The gap.** The build spec says to reject amounts "above a defined maximum" but
-does not define one. The current amount schema now enforces 1,000,000,000 kobo
-(NGN 10,000,000), and unit tests cover the exact boundary. That implementation
-predates the Zod cleanup; product confirmation remains open. It is incorrect to
-say validation currently accepts arbitrary-size transfers.
-
-The ceiling matters for a reason beyond policy: `BIGINT` tops out at
-9,223,372,036,854,775,807 kobo. Arithmetic that approaches it would overflow in
-Postgres, and a sum of ledger entries reaches it sooner than a single transfer
-does.
-
-**The options.**
-
-- **A round product limit**, say NGN 10,000,000 (`"1000000000"` kobo) per
-  transfer. Easy to explain, obviously safe, and the kind of cap a real wallet
-  has. Arbitrary.
-- **A technical limit only**, rejecting anything that could overflow a `BIGINT`
-  sum. Defensible from first principles, no product judgement, but allows a
-  single transfer of implausible size, which looks like an oversight.
-- **Both**, with the product limit as the one that fires and the technical limit
-  as the backstop in validation.
-
-**Recommended:** both, with NGN 10,000,000 as the product limit, documented in
-the README and named in the rejection message.
-
-**Blocks:** final approval of the product cap before the transfer endpoint ships.
-Validation and its unit tests already use the provisional cap.
-
-## Q17 — Does registration reject or ignore privileged fields?
-
-**The gap.** The build spec says a registration body containing `role`,
-`blocked`, `balance` or `is_system` must be rejected *or* ignored, and that the
-choice is documented. Neither is implemented, and the README currently says
-"rejected" while nothing enforces it.
-
-**The options.**
-
-- **Reject with `400`.** A caller who sends `role: "admin"` learns that the field
-  exists and is refused. Noisy but unambiguous, and it catches a client
-  accidentally sending a whole user object.
-- **Ignore silently.** The field is dropped and a customer is created. Simpler to
-  implement — the handler reads only the fields it wants — and gives an attacker
-  nothing, but a legitimate client with a buggy payload gets a success that did
-  not do what it asked.
-
-**Recommended:** reject, because this is a privilege-escalation attempt or a
-client bug, and both are worth surfacing. Ignoring makes the second one invisible.
-
-**Blocks:** registration and its test.
-
 ## Q18 — Which identifier does the blacklist match on?
 
 **The gap.** The build spec says the blacklist matches on email and that the

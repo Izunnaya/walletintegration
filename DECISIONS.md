@@ -1,5 +1,35 @@
 # Decisions
 
+## Q28 - Seed reporting cannot roll back committed data
+
+**Prisma update:** the original implementation below used manual BEGIN/COMMIT.
+Prisma now owns commit and rollback through `$transaction`. The report remains
+outside the transaction. A rejected transaction promise reports possible outcome
+uncertainty; mocked command tests do not prove a rollback. See Q13 and docs/prisma.md.
+
+
+**Decided:** separate write, commit, and reporting failure handling in
+`server/src/seed.ts`. A failure while applying the seed attempts rollback. A
+commit error reports an unacknowledged outcome without claiming rollback. After
+an acknowledged commit, report failures explicitly state that the changes are
+saved and suggest rerunning the repeatable seed to print the report.
+
+**Reason:** the old shared catch attempted rollback even if a report failed
+after commit. A rollback at that point cannot undo saved data and gives the wrong
+impression of the financial result. This protects invariant 10: losing an
+acknowledgement does not establish failure.
+
+**Trade-off:** reporting failure still sets exit status 1, while its message
+distinguishes that from a write failure. Operators must read that outcome rather
+than interpreting every nonzero exit as no changes saved. Automatic retries and
+generic transaction wrappers were unnecessary for this correction.
+
+**Evidence:** four focused mocked command tests cover successful commit before
+reporting, write failure/rollback, reporting failure after commit, and commit
+acknowledgement loss. These establish control flow and messages, not PostgreSQL
+atomicity or crash behavior. Existing funding references and database constraints
+continue to provide seed repeatability; this change does not alter them.
+
 Settled questions, with the reasoning behind them. Each entry says what was
 ruled out as well as what was chosen, so a later reader can tell a deliberate
 trade-off from an oversight.
@@ -317,26 +347,32 @@ negative with an overdraft limit; a separate ledger-only funding entry with no
 counterparty.
 **Reversible:** no. It is a column, a constraint and the shape of the seed.
 
-## Q13 — `pg` with hand-written SQL, not an ORM
+## Q13 - Prisma for database access (supersedes the original pg-only choice)
 
-**Decided:** the driver is `pg` and queries are parameterised SQL written by
-hand.
+**Updated at the user's request:** use Prisma 7 for model definitions, generated
+client types, database queries, migrations, and seed transaction orchestration.
+The original choice was direct pg and handwritten SQL to keep constraints and
+locks visible. Prisma can preserve both by retaining custom SQL in migrations and
+using parameterized raw queries inside its interactive transactions where needed.
 
-The transfer needs `SELECT ... FOR UPDATE` on specific rows, in a specific order,
-inside a transaction whose boundaries are visible in the code. Every ORM can be
-made to do that, through raw-query escape hatches, and what it then provides is a
-layer between the author and the one part of the system that must be exactly
-right.
+Routine seed operations now use Prisma delegates; every transactional helper
+receives `Prisma.TransactionClient`. The transaction remains visible at the call
+site. Future locks must still follow users-first, wallets-second order and use the
+transaction client. An ORM is not a substitute for lock ordering or idempotency.
 
-The earlier project here uses Prisma, and that is the correct choice there: it
-models records and relations and nothing hinges on lock ordering. This is the
-same reasoning reaching a different answer, not a reversal.
+The initial Prisma SQL migration preserves the original seven migrations,
+including all CHECK constraints and the partial system-wallet index. The old SQL
+files are archived, not executed by the CLI. Existing databases require verified
+baselining; no data reset is part of adopting Prisma. See [docs/prisma.md](docs/prisma.md).
 
-The cost is more SQL to write and read, and no generated types for rows.
+**Cost:** generated client files, an ORM dependency, and raw SQL for unsupported
+constraints and explicit locks. `pg` remains the PostgreSQL adapter's underlying
+driver and is used directly by constraint tests, not application persistence code.
+The earlier claim that Prisma cannot preserve SQL financial constraints was too
+strong; preserving them requires reviewed custom migration SQL.
 
-**Ruled out:** Prisma; an ORM with raw queries for the transfer only, which is
-two mental models for one table.
-**Reversible:** expensive after the queries exist.
+**Reversible:** possible, but query code, transaction tests, and migration ownership
+would need another deliberate migration. No financial schema change is implied.
 
 ## Q14 — The repository is split into `server/` and `frontend/`
 
@@ -508,8 +544,6 @@ history should not be rewritten casually.
 | Question | Blocks |
 | --- | --- |
 | **Q15** How the transfer integration tests reach the app | The transfer, and the spec's definition of done |
-| **Q16** The maximum transfer amount | Transfer validation |
-| **Q17** Whether registration rejects or ignores privileged fields | Registration |
 | **Q18** Which identifier the blacklist matches on | The blacklist seed and both checks |
 | **Q19** The rate limit numbers | Rate limiting |
 | **Q20** Whether admin blacklist endpoints are in scope | The admin routes |
@@ -517,3 +551,30 @@ history should not be rewritten casually.
 
 All of them are in [OPEN-QUESTIONS.md](OPEN-QUESTIONS.md), with the options and
 what each costs.
+
+
+## Q29 - Prisma adoption preserves data and requires isolated evidence
+
+**Decided:** generate Prisma Client into ignored source output, generate it on
+install/build, and keep all seven model/table mappings and bigint money intact.
+The legacy custom migration runner is removed. Prisma Migrate deploy applies the
+preserved baseline; existing tables are adopted only after checking their schema
+and running migrate resolve. The original app database is not reset or baselined
+silently.
+
+Tests use TEST_DATABASE_URL and refuse the application's database/schema.
+A repeatable verification script creates and removes its own temporary schema,
+checks migration reruns, seed repeatability and ORM rollback, and rehearses
+baselining data without rewriting balances. Constraint tests intentionally bypass
+Prisma and inspect PostgreSQL errors. The ORM transaction client cannot be replaced
+by a pool or root client halfway through a financial operation.
+
+**Limitation:** custom CHECK constraints and the partial index still require SQL
+review when generating later migrations. Existing seed passwords remain placeholders.
+Unit tests do not establish concurrent transfer guarantees; no transfer endpoint
+has been implemented by this migration.
+
+**Evidence:** schema validation, typecheck, build, and all 81 tests passed in
+disposable-schema verification. Fresh and repeated migrations, compiled and CLI
+seed execution, and baseline adoption preserved the expected balances. Cleanup
+removed the temporary schema; the application schema was not altered.
