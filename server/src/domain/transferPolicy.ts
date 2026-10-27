@@ -1,6 +1,5 @@
 import { createHash } from "node:crypto";
-import { parseAmountMinor } from "./money.ts";
-import type { AmountRejection } from "./money.ts";
+import type { TransferRequest } from "./transferRequest.ts";
 
 // Pure decisions about a transfer. Data in, verdict out - no database, no clock, no
 // randomness, so every case below is reachable in a test.
@@ -9,74 +8,11 @@ import type { AmountRejection } from "./money.ts";
 // enough. It cannot know that the balance is still current. Only a row lock inside the
 // transfer transaction can, which is why the service reads under lock and then calls this.
 
-export type NormalisedTransferRequest = {
-  sourceWalletId: number;
-  destinationWalletId: number;
-  currency: "NGN";
-  amountMinor: bigint;
-};
-
-export type RequestRejection =
-  | AmountRejection
-  | "BODY_NOT_AN_OBJECT"
-  | "SOURCE_WALLET_ID_INVALID"
-  | "DESTINATION_WALLET_ID_INVALID"
-  | "CURRENCY_UNSUPPORTED";
-
-export type NormaliseResult =
-  | { ok: true; request: NormalisedTransferRequest }
-  | { ok: false; reason: RequestRejection };
-
-function readWalletId(value: unknown): number | null {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < 1) {
-    return null;
-  }
-  return value;
-}
-
-export function normaliseTransferRequest(body: unknown): NormaliseResult {
-  if (typeof body !== "object" || body === null || Array.isArray(body)) {
-    return { ok: false, reason: "BODY_NOT_AN_OBJECT" };
-  }
-
-  // Untrusted input. Every field is checked before it is used.
-  const fields = body as Record<string, unknown>;
-
-  const sourceWalletId = readWalletId(fields.sourceWalletId);
-  if (sourceWalletId === null) {
-    return { ok: false, reason: "SOURCE_WALLET_ID_INVALID" };
-  }
-
-  const destinationWalletId = readWalletId(fields.destinationWalletId);
-  if (destinationWalletId === null) {
-    return { ok: false, reason: "DESTINATION_WALLET_ID_INVALID" };
-  }
-
-  if (fields.currency !== "NGN") {
-    return { ok: false, reason: "CURRENCY_UNSUPPORTED" };
-  }
-
-  const amount = parseAmountMinor(fields.amountMinor);
-  if (!amount.ok) {
-    return { ok: false, reason: amount.reason };
-  }
-
-  return {
-    ok: true,
-    request: {
-      sourceWalletId,
-      destinationWalletId,
-      currency: "NGN",
-      amountMinor: amount.amountMinor,
-    },
-  };
-}
-
-// The fingerprint is built from the normalised request, never from the raw JSON. Two
-// requests that mean the same thing - different key order, different whitespace, a padded
-// amount - must produce the same fingerprint, or a client retrying with its own
-// serialisation would get a 409 for an identical intent.
-export function fingerprintTransfer(request: NormalisedTransferRequest): string {
+// The fingerprint is built from the validated request, never from the raw JSON. Two
+// requests that mean the same thing - different key order, a padded amount - must produce
+// the same fingerprint, or a client retrying with its own serialisation would get a 409
+// for an identical intent.
+export function fingerprintTransfer(request: TransferRequest): string {
   const canonical = [
     request.sourceWalletId,
     request.destinationWalletId,

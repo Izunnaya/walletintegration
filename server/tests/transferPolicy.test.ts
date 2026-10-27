@@ -1,15 +1,12 @@
 import { describe, expect, it } from "vitest";
-import {
-  checkTransferPolicy,
-  fingerprintTransfer,
-  normaliseTransferRequest,
-} from "../src/domain/transferPolicy.ts";
+import { checkTransferPolicy, fingerprintTransfer } from "../src/domain/transferPolicy.ts";
 import type {
-  NormalisedTransferRequest,
   PartyState,
   TransferPolicyInput,
   WalletState,
 } from "../src/domain/transferPolicy.ts";
+import { transferRequestSchema } from "../src/domain/transferRequest.ts";
+import type { TransferRequest } from "../src/domain/transferRequest.ts";
 
 const validBody = {
   sourceWalletId: 7,
@@ -18,12 +15,17 @@ const validBody = {
   amountMinor: "150000",
 };
 
-describe("normaliseTransferRequest", () => {
-  it("returns a typed request with the amount as a bigint", () => {
-    const result = normaliseTransferRequest(validBody);
+const messagesOf = (body: unknown): string[] => {
+  const result = transferRequestSchema.safeParse(body);
+  return result.success ? [] : result.error.issues.map((issue) => issue.message);
+};
 
-    expect(result.ok).toBe(true);
-    expect(result.ok && result.request).toEqual({
+describe("transferRequestSchema", () => {
+  it("accepts a valid body and hands back the amount as a bigint", () => {
+    const result = transferRequestSchema.safeParse(validBody);
+
+    expect(result.success).toBe(true);
+    expect(result.success && result.data).toEqual({
       sourceWalletId: 7,
       destinationWalletId: 12,
       currency: "NGN",
@@ -33,57 +35,67 @@ describe("normaliseTransferRequest", () => {
 
   it("refuses a body that is not an object", () => {
     for (const body of [null, undefined, "x", 1, [], true]) {
-      expect(normaliseTransferRequest(body)).toEqual({
-        ok: false,
-        reason: "BODY_NOT_AN_OBJECT",
-      });
+      expect(transferRequestSchema.safeParse(body).success).toBe(false);
     }
   });
 
-  it("refuses a wallet id that is not a positive safe integer", () => {
+  it("refuses a wallet id that is not a positive whole number", () => {
     for (const id of [0, -1, 1.5, "7", null, undefined, Number.MAX_SAFE_INTEGER + 1]) {
-      expect(normaliseTransferRequest({ ...validBody, sourceWalletId: id })).toEqual({
-        ok: false,
-        reason: "SOURCE_WALLET_ID_INVALID",
-      });
+      expect(transferRequestSchema.safeParse({ ...validBody, sourceWalletId: id }).success).toBe(
+        false,
+      );
     }
+  });
+
+  it("names the field that failed", () => {
+    const result = transferRequestSchema.safeParse({ ...validBody, destinationWalletId: 0 });
+
+    expect(result.success).toBe(false);
+    expect(result.success === false && result.error.issues[0]?.path).toEqual([
+      "destinationWalletId",
+    ]);
+  });
+
+  it("reports every failure at once rather than one at a time", () => {
+    const result = transferRequestSchema.safeParse({
+      sourceWalletId: 0,
+      destinationWalletId: -1,
+      currency: "USD",
+      amountMinor: "0",
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.success === false && result.error.issues.length).toBeGreaterThanOrEqual(4);
   });
 
   it("refuses any currency other than NGN", () => {
     for (const currency of ["USD", "ngn", "", null, undefined]) {
-      expect(normaliseTransferRequest({ ...validBody, currency })).toEqual({
-        ok: false,
-        reason: "CURRENCY_UNSUPPORTED",
-      });
+      expect(messagesOf({ ...validBody, currency })).toContain("currency must be NGN");
     }
   });
 
-  it("passes the amount rejection through unchanged", () => {
-    expect(normaliseTransferRequest({ ...validBody, amountMinor: "0" })).toEqual({
-      ok: false,
-      reason: "AMOUNT_NOT_POSITIVE",
-    });
-    expect(normaliseTransferRequest({ ...validBody, amountMinor: 150000 })).toEqual({
-      ok: false,
-      reason: "AMOUNT_NOT_A_STRING",
-    });
+  it("refuses a numeric amount even when the value would be valid", () => {
+    expect(messagesOf({ ...validBody, amountMinor: 150000 })).toContain(
+      "amountMinor must be a string of kobo, not a number",
+    );
   });
 
-  it("ignores fields it was not asked for", () => {
-    const result = normaliseTransferRequest({ ...validBody, userId: 999, role: "admin" });
+  it("refuses an amount of zero, and one above the maximum", () => {
+    expect(messagesOf({ ...validBody, amountMinor: "0" })).toContain(
+      "amountMinor must be greater than zero",
+    );
+    expect(messagesOf({ ...validBody, amountMinor: "1000000001" })[0]).toMatch(/must not exceed/);
+  });
 
-    expect(result.ok).toBe(true);
-    expect(Object.keys(result.ok ? result.request : {}).sort()).toEqual([
-      "amountMinor",
-      "currency",
-      "destinationWalletId",
-      "sourceWalletId",
-    ]);
+  it("refuses an unknown field rather than silently dropping it", () => {
+    // A body carrying userId is either a client bug or an attempt to send as someone else.
+    // The sender always comes from the token, so this is refused, not ignored.
+    expect(transferRequestSchema.safeParse({ ...validBody, userId: 999 }).success).toBe(false);
   });
 });
 
 describe("fingerprintTransfer", () => {
-  const request = (): NormalisedTransferRequest => ({
+  const request = (): TransferRequest => ({
     sourceWalletId: 7,
     destinationWalletId: 12,
     currency: "NGN",
@@ -96,28 +108,36 @@ describe("fingerprintTransfer", () => {
 
   it("ignores how the client formatted the request", () => {
     // Different key order and a padded amount: the same intent, so the same fingerprint.
-    const reordered = normaliseTransferRequest({
+    const parsed = transferRequestSchema.safeParse({
       amountMinor: "  150000 ",
       currency: "NGN",
       destinationWalletId: 12,
       sourceWalletId: 7,
     });
 
-    expect(reordered.ok).toBe(true);
-    expect(reordered.ok ? fingerprintTransfer(reordered.request) : "").toBe(fingerprintTransfer(request()));
+    expect(parsed.success).toBe(true);
+    expect(parsed.success ? fingerprintTransfer(parsed.data) : "").toBe(
+      fingerprintTransfer(request()),
+    );
   });
 
   it("changes when the amount changes", () => {
-    expect(fingerprintTransfer({ ...request(), amountMinor: 150001n })).not.toBe(fingerprintTransfer(request()));
+    expect(fingerprintTransfer({ ...request(), amountMinor: 150001n })).not.toBe(
+      fingerprintTransfer(request()),
+    );
   });
 
   it("changes when the direction is reversed", () => {
-    expect(fingerprintTransfer({ ...request(), sourceWalletId: 12, destinationWalletId: 7 })).not.toBe(fingerprintTransfer(request()));
+    expect(
+      fingerprintTransfer({ ...request(), sourceWalletId: 12, destinationWalletId: 7 }),
+    ).not.toBe(fingerprintTransfer(request()));
   });
 
   it("cannot be confused by field values that run together", () => {
     // Without a separator, (1, 23) and (12, 3) would hash to the same value.
-    expect(fingerprintTransfer({ ...request(), sourceWalletId: 1, destinationWalletId: 23 })).not.toBe(fingerprintTransfer({ ...request(), sourceWalletId: 12, destinationWalletId: 3 }));
+    expect(
+      fingerprintTransfer({ ...request(), sourceWalletId: 1, destinationWalletId: 23 }),
+    ).not.toBe(fingerprintTransfer({ ...request(), sourceWalletId: 12, destinationWalletId: 3 }));
   });
 });
 
@@ -174,14 +194,21 @@ describe("checkTransferPolicy", () => {
   });
 
   it("refuses a transfer to the same wallet", () => {
-    expect(checkTransferPolicy(input({ destinationWallet: wallet({ id: 7, ownerId: 1 }) }))).toEqual({ allowed: false, reason: "SAME_WALLET" });
+    expect(
+      checkTransferPolicy(input({ destinationWallet: wallet({ id: 7, ownerId: 1 }) })),
+    ).toEqual({ allowed: false, reason: "SAME_WALLET" });
   });
 
   it("refuses the system wallet on either side", () => {
-    expect(checkTransferPolicy(input({ sourceWallet: wallet({ id: 7, ownerId: 1, isSystem: true }) }))).toEqual({ allowed: false, reason: "SYSTEM_WALLET_NOT_TRANSFERABLE" });
-    expect(checkTransferPolicy(
+    expect(
+      checkTransferPolicy(input({ sourceWallet: wallet({ id: 7, ownerId: 1, isSystem: true }) })),
+    ).toEqual({ allowed: false, reason: "SYSTEM_WALLET_NOT_TRANSFERABLE" });
+
+    expect(
+      checkTransferPolicy(
         input({ destinationWallet: wallet({ id: 12, ownerId: 2, isSystem: true }) }),
-      )).toEqual({ allowed: false, reason: "SYSTEM_WALLET_NOT_TRANSFERABLE" });
+      ),
+    ).toEqual({ allowed: false, reason: "SYSTEM_WALLET_NOT_TRANSFERABLE" });
   });
 
   it("refuses a blocked or blacklisted sender", () => {
@@ -189,6 +216,7 @@ describe("checkTransferPolicy", () => {
       allowed: false,
       reason: "SENDER_BLOCKED",
     });
+
     expect(checkTransferPolicy(input({ sender: party({ isBlacklisted: true }) }))).toEqual({
       allowed: false,
       reason: "SENDER_BLACKLISTED",
@@ -196,25 +224,36 @@ describe("checkTransferPolicy", () => {
   });
 
   it("refuses a blocked or blacklisted recipient, so a restriction stops both directions", () => {
-    expect(checkTransferPolicy(input({ recipient: party({ userId: 2, isBlocked: true }) }))).toEqual({ allowed: false, reason: "RECIPIENT_BLOCKED" });
-    expect(checkTransferPolicy(input({ recipient: party({ userId: 2, isBlacklisted: true }) }))).toEqual({ allowed: false, reason: "RECIPIENT_BLACKLISTED" });
+    expect(
+      checkTransferPolicy(input({ recipient: party({ userId: 2, isBlocked: true }) })),
+    ).toEqual({ allowed: false, reason: "RECIPIENT_BLOCKED" });
+
+    expect(
+      checkTransferPolicy(input({ recipient: party({ userId: 2, isBlacklisted: true }) })),
+    ).toEqual({ allowed: false, reason: "RECIPIENT_BLACKLISTED" });
   });
 
   it("refuses a currency mismatch", () => {
-    expect(checkTransferPolicy(
+    expect(
+      checkTransferPolicy(
         input({ destinationWallet: wallet({ id: 12, ownerId: 2, currency: "USD" }) }),
-      )).toEqual({ allowed: false, reason: "CURRENCY_MISMATCH" });
+      ),
+    ).toEqual({ allowed: false, reason: "CURRENCY_MISMATCH" });
   });
 
   it("refuses an amount above the balance", () => {
-    expect(checkTransferPolicy(
+    expect(
+      checkTransferPolicy(
         input({ sourceWallet: wallet({ id: 7, ownerId: 1, balanceMinor: 149999n }) }),
-      )).toEqual({ allowed: false, reason: "INSUFFICIENT_FUNDS" });
+      ),
+    ).toEqual({ allowed: false, reason: "INSUFFICIENT_FUNDS" });
   });
 
   it("allows spending the balance down to exactly zero", () => {
-    expect(checkTransferPolicy(
+    expect(
+      checkTransferPolicy(
         input({ sourceWallet: wallet({ id: 7, ownerId: 1, balanceMinor: 150000n }) }),
-      )).toEqual({ allowed: true });
+      ),
+    ).toEqual({ allowed: true });
   });
 });
