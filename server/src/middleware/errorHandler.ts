@@ -12,22 +12,72 @@ export const respondNotFound = (req: Request, res: Response) => {
   });
 };
 
-// Runs when a route threw, or returned a rejected promise. Express only sends errors here because
-// this function takes four arguments, so do not remove "next" even though it is rarely used.
+// Some errors are the caller's fault and already say so. Body parsers in particular throw
+// an error carrying a 4xx status and expose: true, which is Express's convention for "this
+// is safe to tell the client about". Reporting malformed JSON as 500 would be wrong twice
+// over: it tells the caller to retry something that will never work, and it puts a client
+// mistake in the server's error logs as though we had broken.
+//
+// The status is honoured; the message is not. A parser message can quote the body it choked
+// on, so the text comes from here.
+type ClientFault = { status: number; code: string; message: string };
+
+function clientFault(error: unknown): ClientFault | null {
+  if (typeof error !== "object" || error === null) return null;
+
+  const candidate = error as { status?: unknown; statusCode?: unknown; expose?: unknown; type?: unknown };
+  const status = typeof candidate.status === "number" ? candidate.status : candidate.statusCode;
+
+  if (typeof status !== "number" || status < 400 || status > 499) return null;
+  if (candidate.expose !== true) return null;
+
+  if (candidate.type === "entity.parse.failed") {
+    return { status: 400, code: "MALFORMED_JSON", message: "The request body is not valid JSON." };
+  }
+
+  if (candidate.type === "entity.too.large") {
+    return { status: 413, code: "BODY_TOO_LARGE", message: "The request body is too large." };
+  }
+
+  return { status, code: "BAD_REQUEST", message: "The request could not be processed." };
+}
+
+// Runs when a route threw, or returned a rejected promise. Express only sends errors here
+// because this function takes four arguments, so do not remove "next" even though it is
+// rarely used.
 export const respondInternalError = (
   error: unknown,
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
-  // The real error goes to the logs. The client only gets the request ID, because the message and
-  // stack would tell an attacker about our database, file paths and libraries.
-  console.error("request_failed", { requestId: req.requestId, path: req.path, error });
+  const fault = clientFault(error);
+
+  // A caller's malformed request is logged as a rejection, not a failure, so it does not
+  // sit in the logs looking like an outage.
+  if (fault) {
+    console.warn("request_rejected", {
+      requestId: req.requestId,
+      path: req.path,
+      code: fault.code,
+    });
+  } else {
+    // The real error goes to the logs. The client only gets the request ID, because the message and
+    // stack would tell an attacker about our database, file paths and libraries.
+    console.error("request_failed", { requestId: req.requestId, path: req.path, error });
+  }
 
   // Once a response has started sending, its status and headers are already gone, so we cannot
   // replace it with JSON. Handing the error back lets Express close the connection.
   if (res.headersSent) {
     next(error);
+    return;
+  }
+
+  if (fault) {
+    res.status(fault.status).json({
+      error: { code: fault.code, message: fault.message, requestId: req.requestId },
+    });
     return;
   }
 
