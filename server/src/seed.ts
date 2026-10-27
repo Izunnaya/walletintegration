@@ -1,46 +1,29 @@
-import dotenv from "dotenv";
-
-dotenv.config();
-
-// Applies the demo data in one transaction, then prints the result.
-//
-// Never called on startup. npm run seed, deliberately, once. Running it again is safe and
-// changes nothing, which the test in tests/seed.test.ts proves.
+import "dotenv/config";
 
 const runSeed = async () => {
-  const { pool } = await import("./models/db.ts");
+  const { prisma, databaseSchema } = await import("./models/db.ts");
   const { applySeed, reportState } = await import("./models/seedData.ts");
-  const client = await pool.connect();
 
   try {
     let funded: string[];
-
     try {
-      await client.query("BEGIN");
-      const seedResult = await applySeed(client);
-      funded = seedResult.funded;
-    } catch (error) {
-      await client.query("ROLLBACK").catch(() => undefined);
-      throw error;
-    }
-
-    try {
-      await client.query("COMMIT");
+      const result = await prisma.$transaction(
+        (transaction) => applySeed(transaction),
+        { isolationLevel: "ReadCommitted", maxWait: 5000, timeout: 30000 },
+      );
+      funded = result.funded;
     } catch (error) {
       throw new Error(
-        "Seed commit was not acknowledged. The outcome may be unknown; rerun the seed to confirm without funding twice.",
+        "Seed transaction did not complete successfully. If commit acknowledgement was lost, the outcome may be unknown. Rerun the repeatable seed to confirm without funding twice.",
         { cause: error },
       );
     }
 
     try {
-      console.log(
-        funded.length === 0
-          ? "Seed already applied. No balances changed."
-          : `Funded ${funded.length} wallet(s): ${funded.join(", ")}`,
-      );
-
-      await reportState(client);
+      console.log(funded.length === 0
+        ? "Seed already applied. No balances changed."
+        : `Funded ${funded.length} wallet(s): ${funded.join(", ")}`);
+      await reportState(prisma, databaseSchema);
     } catch (error) {
       throw new Error(
         "Seed committed, but reporting failed. The seed changes are saved; rerun the seed to print the report without funding twice.",
@@ -48,8 +31,7 @@ const runSeed = async () => {
       );
     }
   } finally {
-    client.release();
-    await pool.end();
+    await prisma.$disconnect();
   }
 };
 

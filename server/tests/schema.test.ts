@@ -1,7 +1,7 @@
 import "dotenv/config";
 import { afterAll, describe, expect, it } from "vitest";
 import type { PoolClient } from "pg";
-import { pool } from "../src/models/db.ts";
+import { pool } from "./database.ts";
 
 // These run against a real PostgreSQL. A mocked database cannot prove a constraint exists,
 // so a test that mocked one would prove nothing at all.

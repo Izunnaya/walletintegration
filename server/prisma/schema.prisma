@@ -1,0 +1,120 @@
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "ts"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// CHECK constraints and the single-system-wallet index live in migration.sql.
+model User {
+  id                 BigInt              @id @default(autoincrement())
+  email              String              @unique
+  passwordHash       String              @map("password_hash")
+  name               String
+  role               String              @default("customer")
+  isBlocked          Boolean             @default(false) @map("is_blocked")
+  createdAt          DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt          DateTime            @default(now()) @map("updated_at") @db.Timestamptz(6)
+  wallets            Wallet[]
+  idempotencyRecords IdempotencyRecord[]
+  actions            AdminAuditEntry[]   @relation("AuditActor")
+  restrictions       AdminAuditEntry[]   @relation("AuditAffected")
+
+  @@map("users")
+}
+
+model Wallet {
+  id                BigInt        @id @default(autoincrement())
+  ownerId           BigInt        @map("owner_id")
+  currency          String        @default("NGN")
+  balanceMinor      BigInt        @default(0) @map("balance_minor")
+  isSystem          Boolean       @default(false) @map("is_system")
+  createdAt         DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt         DateTime      @default(now()) @map("updated_at") @db.Timestamptz(6)
+  owner             User          @relation(fields: [ownerId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  outgoingTransfers Transfer[]    @relation("TransferSource")
+  incomingTransfers Transfer[]    @relation("TransferDestination")
+  ledgerEntries     LedgerEntry[]
+
+  @@unique([ownerId, currency], map: "wallets_one_per_owner_currency")
+  @@map("wallets")
+}
+
+model Transfer {
+  id                  BigInt              @id @default(autoincrement())
+  reference           String              @unique
+  sourceWalletId      BigInt              @map("source_wallet_id")
+  destinationWalletId BigInt              @map("destination_wallet_id")
+  amountMinor         BigInt              @map("amount_minor")
+  currency            String              @default("NGN")
+  createdAt           DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  sourceWallet        Wallet              @relation("TransferSource", fields: [sourceWalletId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  destinationWallet   Wallet              @relation("TransferDestination", fields: [destinationWalletId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  ledgerEntries       LedgerEntry[]
+  idempotencyRecords  IdempotencyRecord[]
+
+  @@index([sourceWalletId, createdAt(sort: Desc)], map: "transfers_source_created_at")
+  @@index([destinationWalletId, createdAt(sort: Desc)], map: "transfers_destination_created_at")
+  @@map("transfers")
+}
+
+model LedgerEntry {
+  id          BigInt   @id @default(autoincrement())
+  transferId  BigInt   @map("transfer_id")
+  walletId    BigInt   @map("wallet_id")
+  entryType   String   @map("entry_type")
+  amountMinor BigInt   @map("amount_minor")
+  currency    String   @default("NGN")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  transfer    Transfer @relation(fields: [transferId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  wallet      Wallet   @relation(fields: [walletId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([transferId, entryType], map: "ledger_one_per_transfer_type")
+  @@index([walletId], map: "ledger_entries_wallet_id")
+  @@map("ledger_entries")
+}
+
+model IdempotencyRecord {
+  id                 BigInt    @id @default(autoincrement())
+  userId             BigInt    @map("user_id")
+  operation          String
+  idempotencyKey     String    @map("idempotency_key")
+  requestFingerprint String    @map("request_fingerprint")
+  status             String
+  responseStatusCode Int       @map("response_status_code")
+  responseBody       Json      @map("response_body")
+  transferId         BigInt?   @map("transfer_id")
+  createdAt          DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  user               User      @relation(fields: [userId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  transfer           Transfer? @relation(fields: [transferId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([userId, operation, idempotencyKey], map: "idempotency_unique_per_user_operation")
+  @@map("idempotency_records")
+}
+
+model BlacklistEntry {
+  id        BigInt   @id @default(autoincrement())
+  email     String   @unique
+  reason    String
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@map("blacklist_entries")
+}
+
+model AdminAuditEntry {
+  id             BigInt   @id @default(autoincrement())
+  actorUserId    BigInt   @map("actor_user_id")
+  affectedUserId BigInt   @map("affected_user_id")
+  action         String
+  reason         String?
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  actor          User     @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  affectedUser   User     @relation("AuditAffected", fields: [affectedUserId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@index([affectedUserId, createdAt(sort: Desc)], map: "admin_audit_affected_user")
+  @@map("admin_audit_entries")
+}
