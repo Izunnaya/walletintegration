@@ -134,9 +134,77 @@ The seed will fund demo customers through ledger-backed transfers with stable re
 
 ## Development workflow
 
-`main` is the base branch. Each feature uses its own `feature/<name>` branch. Keep commits focused and describe the change clearly. Run relevant checks before committing completed work; merge reviewed features before starting dependent branches.
+### Branches
 
-The original guidance documents remain local and are excluded by `.gitignore`, along with secrets, dependencies, generated output, and local tooling files. No remote or deployment is configured yet.
+`main` is the base branch. One branch per feature, named `feature/<thing>`, following the build
+spec's order. A branch is merged into `main` once its feature works and its checks pass, and the next
+branch starts from the updated `main`. Dependent work does not start on a branch of a branch.
+
+| Branch | Feature |
+| --- | --- |
+| `feature/project-foundation` | HTTP foundation, request IDs, error format, liveness (current) |
+| `feature/database-migrations` | Seven tables with every constraint, including `CHECK (balance >= 0 OR is_system = TRUE)` |
+| `feature/seed-data` | System funding wallet, funded demo customers, blacklist, admin |
+| `feature/health-ready` | Database connection pool and `/health/ready` |
+| `feature/render-deploy` | Live deployment with migrations on deploy |
+| `feature/auth` | Registration with the blacklist check, login, JWT, authorization |
+| `feature/transfers` | The atomic idempotent transfer |
+| `feature/transfer-history` | `GET /transfers` and `GET /transfers/:id` |
+| `feature/admin-restrictions` | Block and unblock with audit records |
+| `feature/rate-limiting` | Per-user and per-IP limits with `Retry-After` |
+| `feature/reconciliation` | The `npm run reconcile` command |
+
+### When to commit
+
+Commit when one idea is finished and the tree still works, not at the end of a session. In practice
+that means a commit for each of these, separately:
+
+- One migration file.
+- One route plus its controller.
+- One middleware.
+- One pure function plus its test.
+- A documentation change that describes work already committed.
+
+Two rules that keep the history readable:
+
+- **Never mix a refactor with a behaviour change.** Moving code and changing what it does in one
+  commit makes both impossible to review.
+- **Never commit a tree that does not type-check.** Run the gate below first. A commit that does not
+  build cannot be bisected to, which defeats the point of frequent commits.
+
+Before every commit:
+
+```sh
+npm run typecheck
+npm run build
+```
+
+Once tests exist, `npm test` joins that list, and a commit that breaks a test is not made.
+
+### Commit messages
+
+Conventional prefixes, a short imperative subject, and a body that says *why* when the subject cannot:
+
+| Prefix | Use |
+| --- | --- |
+| `feat:` | New behaviour a caller can observe |
+| `fix:` | A defect corrected |
+| `refactor:` | Structure changed, behaviour identical |
+| `docs:` | Documentation only |
+| `test:` | Tests only |
+| `chore:` | Dependencies, configuration, tooling |
+
+For anything touching money, the body states which invariant the change protects and what happens on
+failure. A reviewer should be able to read the log and see the financial reasoning without opening
+the diff.
+
+### Remote
+
+No remote is configured, so the history is local only. If the commit history itself needs to be
+visible to a reviewer, add a remote and push each feature branch before merging.
+
+The original guidance documents remain local and are excluded by `.gitignore`, along with secrets,
+dependencies, generated output, and local tooling files.
 
 ## Next stages and evidence
 
