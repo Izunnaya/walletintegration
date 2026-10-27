@@ -46,6 +46,18 @@ describe("parseAmountMinor", () => {
     expect(parseAmountMinor("  150000  ")).toEqual({ ok: true, amountMinor: 150000n });
   });
 
+  it("normalises leading zeroes without changing the amount", () => {
+    expect(parseAmountMinor(" 000150000 ")).toEqual({ ok: true, amountMinor: 150000n });
+    expect(parseAmountMinor("000")).toEqual({ ok: false, reason: "AMOUNT_NOT_POSITIVE" });
+  });
+
+  it("rejects integer strings beyond the safe number range as above the product limit", () => {
+    expect(parseAmountMinor("9007199254740993")).toEqual({
+      ok: false,
+      reason: "AMOUNT_ABOVE_MAXIMUM",
+    });
+  });
+
   it("keeps a value that a double would round", () => {
     // 9007199254740993 is 2^53 + 1, the first integer a double cannot represent.
     const beyondDouble = 9007199254740993n;

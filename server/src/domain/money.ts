@@ -1,13 +1,23 @@
-// Money is a whole number of kobo. 150000 means NGN 1,500.
-//
-// Nothing in this file converts through a JavaScript number. A double is exact only up to
-// 2^53, which is well inside what BIGINT can hold, and past it the loss is silent - the
-// wrong figure, with no error. bigint is exact at every size Postgres can store.
+import { z } from "zod";
 
-// NGN 10,000,000 per transfer. A product limit rather than a technical one: BIGINT could
-// hold far more, but a wallet with no deposits has no business moving more than this, and
-// an absurd amount is more likely a bug or an attack than an intention.
+// NGN 10,000,000 per transfer; this is a product limit, not the BIGINT storage limit.
 export const MAX_TRANSFER_AMOUNT_MINOR = 1_000_000_000n;
+
+export const currencySchema = z.literal("NGN", { error: "currency must be NGN" });
+
+// Validate digits before conversion; never coerce money through a JavaScript number.
+export const amountMinorSchema = z
+  .string({ error: "amountMinor must be a string of kobo, not a number" })
+  .trim()
+  .regex(/^\d+$/, { error: "amountMinor must contain digits only" })
+  .transform((text) => BigInt(text))
+  .pipe(
+    z.bigint()
+      .positive({ error: "amountMinor must be greater than zero" })
+      .max(MAX_TRANSFER_AMOUNT_MINOR, {
+        error: `amountMinor must not exceed ${MAX_TRANSFER_AMOUNT_MINOR} kobo`,
+      }),
+  );
 
 export type AmountRejection =
   | "AMOUNT_NOT_A_STRING"
@@ -19,35 +29,27 @@ export type AmountParseResult =
   | { ok: true; amountMinor: bigint }
   | { ok: false; reason: AmountRejection };
 
-// Accepts a positive integer string of kobo. A number is refused outright, even a valid
-// one: accepting it would mean a caller could send 0.1 or 1e21 and have us guess.
 export function parseAmountMinor(input: unknown): AmountParseResult {
-  if (typeof input !== "string") {
-    return { ok: false, reason: "AMOUNT_NOT_A_STRING" };
+  const result = amountMinorSchema.safeParse(input);
+
+  if (result.success) {
+    return { ok: true, amountMinor: result.data };
   }
 
-  const text = input.trim();
-
-  // Digits only. This is what rejects "-1", "1.5", "1e4", "+1", "0x1f", "" and " ".
-  if (!/^\d+$/.test(text)) {
-    return { ok: false, reason: "AMOUNT_NOT_AN_INTEGER" };
+  switch (result.error.issues[0]?.code) {
+    case "invalid_type":
+      return { ok: false, reason: "AMOUNT_NOT_A_STRING" };
+    case "invalid_format":
+      return { ok: false, reason: "AMOUNT_NOT_AN_INTEGER" };
+    case "too_small":
+      return { ok: false, reason: "AMOUNT_NOT_POSITIVE" };
+    case "too_big":
+      return { ok: false, reason: "AMOUNT_ABOVE_MAXIMUM" };
+    default:
+      throw result.error;
   }
-
-  const amountMinor = BigInt(text);
-
-  if (amountMinor <= 0n) {
-    return { ok: false, reason: "AMOUNT_NOT_POSITIVE" };
-  }
-
-  if (amountMinor > MAX_TRANSFER_AMOUNT_MINOR) {
-    return { ok: false, reason: "AMOUNT_ABOVE_MAXIMUM" };
-  }
-
-  return { ok: true, amountMinor };
 }
 
-// The single place money becomes JSON. A JSON number is a double, so an amount crosses
-// the wire as a string or it crosses it wrong.
 export function amountMinorToJson(amountMinor: bigint): string {
   return amountMinor.toString();
 }

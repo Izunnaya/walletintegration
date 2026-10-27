@@ -61,6 +61,18 @@ are the same wallet.
 Naming carries the unit. `amountMinor`, `senderBalanceMinor` — never `amount` or
 `balance` on their own, so a mixed-unit mistake is visible where it is written.
 
+`server/src/domain/money.ts` defines the reusable Zod amount and currency schemas.
+The amount schema trims whitespace, validates digits, converts directly to
+`bigint`, and checks the positive amount and existing transfer limit. The request
+schema composes these schemas; `parseAmountMinor` adapts their issues to the
+existing domain rejection codes. Both entry points use the same validation rules.
+See [Zod's schema documentation](https://zod.dev/api) for transforms and pipes.
+
+Transfer policy remains a sequence of explicit decisions using supplied state.
+Ownership is checked before restrictions or funds, and the calling transaction
+must obtain that state under row locks. Schema validation does not replace those
+locks or business decisions.
+
 ---
 
 ## Wallets and accounts

@@ -80,6 +80,28 @@ describe("transferRequestSchema", () => {
     );
   });
 
+  it.each(["", " ", "-1", "1.5", "1e4", "+1", "0x1f", "12a"])(
+    "reports invalid amount %j at its field without throwing during conversion",
+    (amountMinor) => {
+      const result = transferRequestSchema.safeParse({ ...validBody, amountMinor });
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.issues).toEqual([
+          expect.objectContaining({
+            path: ["amountMinor"],
+            message: "amountMinor must contain digits only",
+          }),
+        ]);
+      }
+    },
+  );
+
+  it("normalises padded amounts without changing the input body", () => {
+    const body = { ...validBody, amountMinor: " 000150000 " };
+    expect(transferRequestSchema.parse(body).amountMinor).toBe(150000n);
+    expect(body.amountMinor).toBe(" 000150000 ");
+  });
+
   it("refuses an amount of zero, and one above the maximum", () => {
     expect(messagesOf({ ...validBody, amountMinor: "0" })).toContain(
       "amountMinor must be greater than zero",

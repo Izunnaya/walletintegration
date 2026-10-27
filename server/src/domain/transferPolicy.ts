@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { currencySchema } from "./money.ts";
 import type { TransferRequest } from "./transferRequest.ts";
 
 // Pure decisions about a transfer. Data in, verdict out - no database, no clock, no
@@ -96,7 +97,7 @@ export function checkTransferPolicy(input: TransferPolicyInput): TransferPolicyR
 
   if (
     input.sourceWallet.currency !== input.destinationWallet.currency ||
-    input.sourceWallet.currency !== "NGN"
+    input.sourceWallet.currency !== currencySchema.value
   ) {
     return { allowed: false, reason: "CURRENCY_MISMATCH" };
   }
