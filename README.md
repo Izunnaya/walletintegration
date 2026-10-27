@@ -36,12 +36,12 @@ and real PostgreSQL concurrency tests.
 
 ## Where it stands
 
-The HTTP foundation, seven SQL migrations, migration runner, connection pool
-module, Zod schemas, transfer policy, fingerprint helper, and 46 unit tests exist.
+The HTTP foundation, Prisma models/migration, repeatable seed, shared Prisma
+client, Zod schemas, transfer policy, fingerprint helper, and 50 unit tests exist.
 The app currently mounts only the health route. Migration execution on a target
 database is not established by the existence of those files.
 
-Seeding, readiness, deployment, authentication, wallet endpoints, the atomic
+Readiness, deployment, authentication, wallet endpoints, the atomic
 idempotent transfer, history, admin restrictions, rate limits, and reconciliation
 remain to be built. [WALKTHROUGH.md](WALKTHROUGH.md) explains the actual files and
 limits; Q23?Q27 in [DECISIONS.md](DECISIONS.md) capture recent domain decisions.
@@ -68,7 +68,9 @@ npm run dev              # http://localhost:3000
 | `npm run build` | Compiles `src/` to `dist/` |
 | `npm start` | Runs the compiled server |
 | `npm test` | Runs Vitest unit tests |
-| `npm run migrate` | Applies SQL migrations using DATABASE_URL |
+| `npm run migrate` | Applies Prisma migrations |
+| `npm run seed` | Seeds demo wallets through Prisma |
+| `npm run verify:prisma` | Checks Prisma in an isolated PostgreSQL schema |
 
 ```sh
 curl -i http://localhost:3000/health/live
@@ -90,7 +92,7 @@ different `PORT`.
 │       ├── routes/          One router per resource, wiring only
 │       ├── controllers/     One controller per resource, the work
 │       ├── middleware/      Request IDs, the error contract, later auth and validation
-│       └── models/          The pg connection pool; feature queries will follow
+│       └── models/          Prisma client and repeatable seed operations
 ├── frontend/            Placeholder; nothing is built there yet
 ├── docs/                Architecture, domain and API documentation
 ├── DECISIONS.md         Settled questions, with what was ruled out
@@ -150,9 +152,11 @@ Not deployed yet. The plan, with the trap that matters:
 
 ## Stack
 
-Node 22, Express 5, TypeScript (strict), PostgreSQL. `dotenv` for configuration.
-`pg` rather than an ORM, because the transfer needs `SELECT ... FOR UPDATE` with
-a specific lock order ([Q13](DECISIONS.md)).
+Node 22, Express 5, strict TypeScript, PostgreSQL, and Prisma 7. Zod validates
+external input; dotenv loads local configuration; Vitest runs tests. Prisma uses
+its pg adapter internally. SQL constraints and future explicit row locks remain
+part of the financial design. Q13 supersedes the original pg-only decision.
 
-Two runtime dependencies, three development dependencies. Every one of them is
-explainable in a sentence, which is the test applied before adding another.
+Read [docs/prisma.md](docs/prisma.md) before migrating an existing database.
+Client generation is automatic on install/build; seeding is explicit. Existing
+application data is preserved through verified baselining, never a reset.

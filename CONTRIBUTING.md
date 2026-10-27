@@ -103,8 +103,8 @@ workflow is worth doing once there is a test suite for it to run.
 - **Money is integer kobo as `bigint`**, stored as `BIGINT`, serialised as a
   string. Never a JavaScript `number`. Names carry the unit: `amountMinor`,
   `senderBalanceMinor`.
-- **Every query in a transaction takes the transaction client explicitly.** A
-  helper that reaches for the pool instead runs outside the transaction and
+- **Every query in a transaction takes Prisma.TransactionClient explicitly.** A
+  helper that reaches for the root Prisma client instead runs outside the transaction and
   escapes the locks.
 - **Locks are users first, then wallets, each in ascending id order**, in every
   operation that takes them. This only works if it holds everywhere.
@@ -164,3 +164,13 @@ Test conventions:
   request flag. An endpoint that triggers failures is a production risk.
 - **Report what a test establishes.** An application-exception test is not a
   process-crash test, and saying so is part of the test being honest.
+
+
+## Prisma changes
+
+Generate the client after changing models. Commit schema.prisma and reviewed
+migration SQL, never src/generated/prisma. Preserve all custom financial checks
+and partial indexes in SQL. Use prisma migrate deploy for committed migrations;
+never reset an existing database to adopt or change Prisma. See [docs/prisma.md](docs/prisma.md).
+Run database tests against TEST_DATABASE_URL or use npm run verify:prisma for a
+new temporary schema. Do not run truncating test setup against application data.

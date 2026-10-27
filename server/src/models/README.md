@@ -1,22 +1,13 @@
 # models/
 
-The records themselves: the tables, and the code that reads and writes them.
-Nothing here yet — the seven tables arrive on `feature/database-migrations` and
-the connection pool on `feature/health-ready`.
+`db.ts` exports the shared Prisma client. `databaseClient.ts` configures its
+PostgreSQL adapter. `seedData.ts` contains the seed fixtures and database writes.
+Models do not handle HTTP requests or responses.
 
-A model knows about storage and about the rules that make a record valid. It
-knows nothing about HTTP: no request, no response, no status codes. That way the
-same rule can be called from an endpoint, the seed script or the reconciliation
-command, and can be tested without a server.
+All helpers participating in a transaction receive `Prisma.TransactionClient`
+explicitly. They must use it for every query; using the shared Prisma client would
+run outside the caller's transaction. Transfers and ledger entries remain append-only.
 
-Two rules specific to this service, because money is involved:
-
-- **Every query that runs inside a transaction takes the transaction client as an
-  argument.** A function that reaches for the pool instead would run outside the
-  transaction and silently escape its locks, which is the one bug this whole
-  design exists to prevent.
-- **Nothing here updates or deletes a financial row.** Transfers and ledger
-  entries are append-only; a correction is a new compensating entry.
-
-The invariants these tables enforce, and the constraints that enforce them, are
-in `../../../docs/domain.md`.
+Prisma models and migrations live in `server/prisma/`. Generated client code lives
+in ignored `src/generated/prisma/`; never edit it. See [the Prisma workflow](../../../docs/prisma.md)
+and [the financial rules](../../../docs/domain.md).
