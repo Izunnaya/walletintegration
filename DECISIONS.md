@@ -359,7 +359,7 @@ repositories, which would split the history of one product.
 ## Q22 — The repository is public
 
 **Decided:** public, and it stays public. Verified rather than assumed —
-`repos/Izunnaya/walletdemo` reports `private=false`.
+`repos/Izunnaya/walletintegration` reports `private=false`.
 
 A reviewer opens the link and reads the code with no account, no invitation and
 no extra step. For a take-home that is the whole point: friction in getting to
