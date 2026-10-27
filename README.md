@@ -67,7 +67,8 @@ npm run dev              # http://localhost:3000
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run build` | Compiles `src/` to `dist/` |
 | `npm start` | Runs the compiled server |
-| `npm test` | Runs Vitest unit tests |
+| `npm test` | Runs all Vitest suites; the database suites need `TEST_DATABASE_URL` |
+| `npm run test:unit` | Runs only the tests that need no database |
 | `npm run migrate` | Applies Prisma migrations |
 | `npm run seed` | Seeds demo wallets through Prisma |
 | `npm run verify:prisma` | Checks Prisma in an isolated PostgreSQL schema |
