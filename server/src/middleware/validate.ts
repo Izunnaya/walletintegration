@@ -13,6 +13,7 @@ const validateBody = (schema: ZodType) => (req: Request, res: Response, next: Ne
   const result = schema.safeParse(req.body);
 
   if (result.success) {
+    res.locals.body = result.data;
     next();
     return;
   }

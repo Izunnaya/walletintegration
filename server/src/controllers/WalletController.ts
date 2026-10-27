@@ -17,8 +17,9 @@ const getMyWallet = async (req: Request, res: Response) => {
     return;
   }
 
-  const wallet = await prisma.wallet.findFirst({
-    where: { ownerId: caller.userId, currency: "NGN" },
+  const wallet = await prisma.wallet.findUnique({
+    where: { ownerId_currency: { ownerId: caller.userId, currency: "NGN" } },
+    select: { id: true, currency: true, balanceMinor: true },
   });
 
   if (!wallet) {

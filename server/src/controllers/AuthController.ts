@@ -1,19 +1,18 @@
 import type { Request, Response } from "express";
-import { registerRequestSchema, loginRequestSchema } from "../domain/authRequest.ts";
+import type { RegisterRequest, LoginRequest } from "../domain/authRequest.ts";
 import { prisma } from "../models/db.ts";
 import { hashPassword, verifyPassword } from "../models/password.ts";
 import { issueToken } from "../models/authToken.ts";
 
-// The body has already been through validate middleware, so parsing here cannot fail. It
-// is parsed rather than cast so the values are typed without a type assertion.
-
-const createUser = async (req: Request, res: Response) => {
+const createUser = async (req: Request, res: Response<unknown, { body: RegisterRequest }>) => {
   try {
-    const { email, name, password } = registerRequestSchema.parse(req.body);
+    const { email, name, password } = res.locals.body;
 
-    // Checked before the password is hashed, because hashing costs 250ms and a blacklisted
-    // address does not deserve it.
-    const blacklisted = await prisma.blacklistEntry.findUnique({ where: { email } });
+    // Reject blacklisted addresses before doing expensive password hashing.
+    const blacklisted = await prisma.blacklistEntry.findUnique({
+      where: { email },
+      select: { id: true },
+    });
 
     if (blacklisted) {
       res.status(422).json({
@@ -28,12 +27,7 @@ const createUser = async (req: Request, res: Response) => {
 
     const passwordHash = await hashPassword(password);
 
-    // The user and their wallet are created in one transaction, so a user can never exist
-    // without a wallet. Without this, a failure between the two inserts would leave an
-    // account that cannot hold money and that registration would refuse to recreate,
-    // because the email is already taken.
-    //
-    // role is not read from the request. Public registration always creates a customer.
+    // Create the customer and zero-balance wallet atomically.
     const created = await prisma.$transaction(async (tx) => {
       const user = await tx.user.create({
         data: { email, name, passwordHash, role: "customer" },
@@ -78,17 +72,15 @@ const createUser = async (req: Request, res: Response) => {
   }
 };
 
-const createSession = async (req: Request, res: Response) => {
-  const { email, password } = loginRequestSchema.parse(req.body);
+const createSession = async (req: Request, res: Response<unknown, { body: LoginRequest }>) => {
+  const { email, password } = res.locals.body;
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({
+    where: { email },
+    select: { id: true, email: true, name: true, role: true, passwordHash: true, isBlocked: true },
+  });
 
-  // One answer for "no such email" and "wrong password". Distinguishing them turns login
-  // into a way to discover which addresses are registered.
-  //
-  // The password is still verified against a dummy hash when the user does not exist, so
-  // both paths take the same ~250ms. Returning early would make a missing account
-  // measurably faster to probe than a wrong password.
+  // A dummy comparison reduces timing differences for unknown accounts.
   const passwordMatches = await verifyPassword(password, user?.passwordHash ?? DUMMY_HASH);
 
   if (!user || !passwordMatches) {
@@ -123,8 +115,7 @@ const createSession = async (req: Request, res: Response) => {
   });
 };
 
-// A real bcrypt hash of a value nothing can supply, so comparing against it always fails
-// at the same cost as comparing against a genuine one.
+// Same bcrypt cost as real accounts; an absent user is rejected regardless of the match.
 const DUMMY_HASH = "$2b$12$C6UzMDM.H6dfI/f/IKcEe.KnQqDLpZQH0VsOQpyfPbPCNkFLX8/Py";
 
 function isUniqueViolation(error: unknown): boolean {
@@ -132,7 +123,7 @@ function isUniqueViolation(error: unknown): boolean {
     typeof error === "object" &&
     error !== null &&
     "code" in error &&
-    (error as { code?: unknown }).code === "P2002"
+    error.code === "P2002"
   );
 }
 
