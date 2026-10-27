@@ -508,8 +508,6 @@ history should not be rewritten casually.
 | Question | Blocks |
 | --- | --- |
 | **Q15** How the transfer integration tests reach the app | The transfer, and the spec's definition of done |
-| **Q16** The maximum transfer amount | Transfer validation |
-| **Q17** Whether registration rejects or ignores privileged fields | Registration |
 | **Q18** Which identifier the blacklist matches on | The blacklist seed and both checks |
 | **Q19** The rate limit numbers | Rate limiting |
 | **Q20** Whether admin blacklist endpoints are in scope | The admin routes |

@@ -16,10 +16,23 @@ afterAll(async () => {
   await pool.end();
 });
 
-async function inRolledBackTransaction(work: (client: PoolClient) => Promise<void>) {
+// Most tests only need rows they created themselves, so they run against whatever is
+// committed. The two that assert on wallets_single_system cannot: it is a GLOBAL uniqueness
+// rule, so a test about it has to own the whole table. Those pass { fresh: true }, which
+// empties the tables inside the transaction that is about to be rolled back.
+async function inRolledBackTransaction(
+  work: (client: PoolClient) => Promise<void>,
+  options: { fresh?: boolean } = {},
+) {
   const client = await pool.connect();
   try {
     await client.query("BEGIN");
+    if (options.fresh) {
+      await client.query(
+        `TRUNCATE idempotency_records, ledger_entries, transfers, admin_audit_entries,
+                  wallets, users, blacklist_entries CASCADE`,
+      );
+    }
     await work(client);
   } finally {
     await client.query("ROLLBACK").catch(() => undefined);
@@ -95,7 +108,7 @@ describe("wallets", () => {
       );
 
       expect(result.rows[0]?.balance_minor).toBe("-500000");
-    });
+    }, { fresh: true });
   });
 
   it("refuses a second system wallet, so the exception cannot be reached twice", async () => {
@@ -114,7 +127,7 @@ describe("wallets", () => {
         `INSERT INTO wallets (owner_id, is_system) VALUES ($1, TRUE)`,
         [secondOwner],
       );
-    });
+    }, { fresh: true });
   });
 
   it("refuses two wallets for the same owner and currency", async () => {
