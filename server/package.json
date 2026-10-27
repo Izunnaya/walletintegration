@@ -21,7 +21,7 @@
     "migrate:status": "prisma migrate status",
     "migrate:baseline": "prisma migrate resolve --applied 0_init",
     "test:unit": "vitest run tests/money.test.ts tests/transferPolicy.test.ts tests/seedCommand.test.ts tests/auth.test.ts",
-    "test:integration": "vitest run tests/schema.test.ts tests/seed.test.ts --no-file-parallelism",
+    "test:integration": "vitest run tests/schema.test.ts tests/seed.test.ts tests/auth.integration.test.ts --no-file-parallelism",
     "verify:prisma": "node scripts/verify-prisma.mjs"
   },
   "dependencies": {
