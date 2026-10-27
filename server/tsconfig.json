@@ -9,11 +9,10 @@
     "verbatimModuleSyntax": true,
     "rewriteRelativeImportExtensions": true,
     "erasableSyntaxOnly": true,
-    "skipLibCheck": true,
-    "rootDir": "src",
-    "outDir": "dist"
+    "skipLibCheck": true
   },
   "include": [
-    "src/**/*.ts"
+    "src/**/*.ts",
+    "tests/**/*.ts"
   ]
 }
