@@ -39,11 +39,12 @@ instant or the same request is retried.
 
 ## 3. Every file, and what to say about it
 
-The layout follows the same shape as the Restaurant backend: `index.ts` sets up and starts the app,
-and the work is split across `routes/`, `controllers/`, `middleware/`, with `models/` to come.
+The repository is split into `server/` and `frontend/`, with nothing in the frontend yet. Inside the
+server the layout follows the same shape as the Restaurant backend: `index.ts` sets up and starts the
+app, and the work is split across `routes/`, `controllers/`, `middleware/`, with `models/` to come.
 
 ```
-src/
+server/src/
   index.ts                        dotenv, express, middleware, mount routes, listen
   routes/HealthRoute.ts           one router per resource, wiring only
   controllers/HealthController.ts one controller per resource
@@ -51,7 +52,7 @@ src/
   middleware/errorHandler.ts      the 404 and 500 responses
 ```
 
-### `src/index.ts`
+### `server/src/index.ts`
 
 ```ts
 dotenv.config();
@@ -87,7 +88,7 @@ Three questions it invites:
 - *Why `.ts` in the import paths?* Node 22 runs TypeScript directly, and it resolves the real file on
   disk, so the extension is the actual one. The build rewrites them to `.js`.
 
-### `src/routes/HealthRoute.ts`
+### `server/src/routes/HealthRoute.ts`
 
 ```ts
 const router = express.Router();
@@ -107,7 +108,7 @@ validate, controller — for example:
 router.post("/", verifyToken, validateTransferRequest, TransferController.createTransfer);
 ```
 
-### `src/controllers/HealthController.ts`
+### `server/src/controllers/HealthController.ts`
 
 ```ts
 const getLiveness = (req: Request, res: Response) => {
@@ -127,7 +128,7 @@ controllers become `async` with try/catch as soon as they touch the database."
 `/health/ready` will answer "is the database reachable", and that is the one Render's health check
 points at. Mixing them would make a restart look like a database outage.
 
-### `src/middleware/requestId.ts`
+### `server/src/middleware/requestId.ts`
 
 ```ts
 declare global {
@@ -163,7 +164,7 @@ on every request, or put junk in it, and the logs would be worthless. The server
 you tell TypeScript about a property you are adding to the request — the same pattern as
 `req.userId` in the Restaurant project's `auth.ts`.
 
-### `src/middleware/errorHandler.ts`
+### `server/src/middleware/errorHandler.ts`
 
 Two functions. `respondNotFound` returns the 404. `respondInternalError` catches anything a route threw:
 
@@ -222,7 +223,7 @@ two type packages.
 
 ### `tsconfig.json`
 
-Strict mode, compiles `src/` into `dist/`. Four settings are worth knowing if asked:
+Strict mode, compiles `server/src/` into `server/dist/`. All npm commands run from `server/`. Four settings are worth knowing if asked:
 
 - `strict` — the baseline.
 - `noUncheckedIndexedAccess` — indexing an array gives `T | undefined`, forcing the check. This matters
@@ -243,7 +244,7 @@ build spec and the development guide), since those are the brief rather than the
 
 | Coming file | Job |
 | --- | --- |
-| `src/models/db.ts` | One `pg` connection pool |
+| `server/src/models/db.ts` | One `pg` connection pool |
 | `src/middleware/auth.ts` | `verifyToken` (who are you), `requireRole` (are you allowed) |
 | `src/middleware/validate.ts` | Request validation, one exported array per request type |
 | `src/routes/AuthRoute.ts`, `WalletRoute.ts`, `TransferRoute.ts`, `AdminRoute.ts` | Wiring |

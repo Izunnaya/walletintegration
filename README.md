@@ -21,15 +21,25 @@ The repository contains an Express/TypeScript foundation with `GET /health/live`
 
 The target is one API and PostgreSQL database, deployed on Render. It handles internal NGN transfers. Payment providers, deposits, withdrawals, notifications, queues, Redis, and a UI are outside this build.
 
+## Repository layout
+
+```
+server/     the wallet service API, described below
+frontend/   placeholder; nothing is built there yet
+```
+
+The server has no dependency on the frontend folder. The API is the contract between them.
+
 ## Local setup
 
-Use Node.js 22.18 or newer within the 22.x release line and npm.
+Use Node.js 22.18 or newer within the 22.x release line and npm. All commands below run from `server/`.
 
 ```sh
+cd server
 npm ci
 ```
 
-Optionally copy `.env.example` to `.env` and change `PORT` (default `3000`). In PowerShell use `Copy-Item .env.example .env`.
+Optionally copy `server/.env.example` to `server/.env` and change `PORT` (default `3000`). In PowerShell use `Copy-Item server/.env.example server/.env`.
 
 ```sh
 npm run dev
@@ -49,7 +59,7 @@ Run either the development server or the built server at a time. On Windows, use
 The backend follows a routes / controllers / middleware layout.
 
 ```
-src/
+server/src/
   index.ts                        # dotenv, express, middleware, mount routes, listen
   routes/
     HealthRoute.ts                # one router per resource, wiring only
