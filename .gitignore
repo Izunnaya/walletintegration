@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+.qodo/
+/Wallet_Service_Development_Guide.md
+/Wallet Service Build Spec*.md
