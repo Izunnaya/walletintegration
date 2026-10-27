@@ -578,3 +578,56 @@ has been implemented by this migration.
 disposable-schema verification. Fresh and repeated migrations, compiled and CLI
 seed execution, and baseline adoption preserved the expected balances. Cleanup
 removed the temporary schema; the application schema was not altered.
+
+
+## Authentication review follow-up
+
+- Keep bcrypt and enforce its 72-byte UTF-8 input limit through Zod on both
+  registration and login. Keep the registration minimum of 12 characters. Do not
+  trim passwords or silently truncate them; pre-existing over-limit passwords need
+  reset. Cost 12 is a tunable work factor, not a guarantee against guessing.
+- Validate once in route middleware, pass parsed output through `res.locals.body`,
+  and use Zod-inferred types in controllers. The validator must precede its handler.
+- Keep detailed rationale in WALKTHROUGH.md and short, accurate reasons in code.
+- Export the Express app separately from the listening entrypoint so HTTP tests
+  exercise production routing without starting the normal server port.
+- Verify auth behavior against a disposable PostgreSQL schema with real transactions.
+  A failing wallet-insert trigger demonstrates registration rollback. Only the
+  connection is substituted; hashing, tokens, SQL and HTTP handling remain real.
+- Rate limits remain a later implementation stage, not a completed auth guarantee.
+
+
+## API latency review (28 October 2026)
+
+The shared Prisma client now keeps idle connections for 60 seconds instead of the
+pg default of 10 seconds, and bounds new connection attempts to 10 seconds. This
+reduces repeated TCP/TLS setup during short pauses; it is not a SQL execution
+timeout. The server runs SELECT 1 before listening, so connection setup happens
+at startup and startup fails if the database is unreachable. This moves work out
+of the first request; it does not remove that work.
+
+Wallet lookup uses the existing unique (ownerId, currency) key and selects only
+id, currency and balance. Blacklist lookup selects only id, and login selects only
+the identity, restriction and password fields it consumes. No new index is needed:
+email and the wallet owner/currency pair already have unique indexes. Blacklist
+results are not cached, password cost is unchanged, and registration remains atomic.
+
+Local HTTP measurements against the configured hosted database:
+
+| Request | Before | After |
+| --- | --- | --- |
+| Blacklist rejection, first measured request | 17,415 ms | 248 ms |
+| Blacklist rejection, subsequent requests | 221-228 ms | 228-235 ms |
+| Wallet read, three requests | 10,165-16,957 ms | 221-228 ms |
+| Login rejection | 456-485 ms | 467-472 ms |
+| Database read after 11 seconds idle | 1,787 ms | 223 ms |
+
+These are a small sequential sample, not a load test or a latency guarantee. The
+initial database readiness request still took 1.6-2 seconds in the probe, which
+bypassed the startup entrypoint. The results do not establish the exact cause of
+every earlier outlier. Neon can suspend idle compute; a long-idle wakeup or network
+latency can still affect responses. No hosting plan or scale-to-zero setting was
+changed. Keep the deployed API and database geographically close when deploying.
+
+References: https://node-postgres.com/apis/pool and
+https://neon.com/docs/introduction/compute-lifecycle.
