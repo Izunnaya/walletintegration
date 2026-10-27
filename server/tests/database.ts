@@ -35,7 +35,11 @@ if (!connectionString) {
 const directUrl = new URL(connectionString);
 directUrl.hostname = directUrl.hostname.replace("-pooler", "");
 
-export const testPrisma = createDatabaseClient(directUrl.toString());
+export const testPrisma = createDatabaseClient(directUrl.toString(), {
+  // Generous, because the tests reach a hosted database across a VPN and Prisma's default
+  // two second maxWait is shorter than a single round trip under load.
+  transactionOptions: { maxWait: 20_000, timeout: 40_000 },
+});
 
 // The constraint tests deliberately bypass the ORM: they assert on the constraint name
 // PostgreSQL reports, which is the evidence that the constraint exists at all.
