@@ -1,12 +1,13 @@
 import { z } from "zod";
 
-// Registration and login request shapes.
+// Registration and login use the same email normalization: trim, then lowercase. The same
+// normalised value is used for uniqueness, the blacklist check and login, and the database
+// enforces the rule again through users_email_normalised and blacklist_email_normalised.
+// Two tables, one definition of what an email is, so they cannot disagree.
 //
-// The email rule is one rule, applied once, here: trim then lowercase. The same normalised
-// value is used for uniqueness, for the blacklist check and for login, and the database
-// enforces it again with users_email_normalised and blacklist_email_normalised. Two tables,
-// one definition of what an email is, so they cannot disagree.
-
+// Trimming handles spaces, tabs and newlines around the address. A space *inside* one is
+// refused by the email check rather than silently removed, because "ad a@example.com" is
+// not a typo we can safely guess at.
 export const normalisedEmail = z
   .string()
   .trim()
@@ -15,30 +16,52 @@ export const normalisedEmail = z
   .max(254, "email is too long")
   .pipe(z.string().email("email must be a valid address"));
 
-// strictObject, not object. A registration body carrying role, isBlocked, balanceMinor or
-// isSystem is refused rather than silently stripped, which is Q17 settled as reject. A
-// client sending role: "admin" is either a bug or an escalation attempt, and both are worth
-// telling the caller about. Dropping the field quietly would hide the bug and teach the
-// attacker nothing either way.
+// bcrypt ignores input beyond 72 UTF-8 bytes, so reject it before hashing or comparing.
+//
+// It truncates silently rather than complaining, which makes this a real hole and not just
+// a tidiness rule: without the cap, someone could set a 200 character password believing it
+// strong, while anyone knowing its first 72 bytes could sign in. Bytes rather than
+// characters, because one emoji or accented letter can take up to four.
+//
+// Login applies the same cap. If it did not, a password longer than 72 bytes would appear
+// to work through truncation, which is worse than refusing it.
+const passwordSchema = z
+  .string()
+  .refine(
+    (password) => Buffer.byteLength(password, "utf8") <= 72,
+    "password must be at most 72 UTF-8 bytes",
+  );
+
 export const registerRequestSchema = z.strictObject({
   email: normalisedEmail,
   name: z.string().trim().min(1, "name is required").max(120, "name is too long"),
-  // Length only. A composition rule (one upper, one digit, one symbol) shrinks the search
-  // space more than it raises the cost, and NIST stopped recommending them.
-  password: z
-    .string()
-    .min(12, "password must be at least 12 characters")
-    .max(200, "password must be at most 200 characters"),
+
+  // Length only, and nothing about composition. A rule demanding one upper, one digit and
+  // one symbol shrinks the search space more than it raises the cost, which is why NIST
+  // stopped recommending them. Spaces are allowed and wanted: a passphrase beats a short
+  // cryptic string.
+  //
+  // The password is never trimmed. It is a secret, and silently altering what someone typed
+  // is worse than storing it as given. Login does not trim either, so the two always agree
+  // about what the password is.
+  password: passwordSchema
+    .refine((password) => password.length >= 12, "password must be at least 12 characters")
+    // Without this, twelve spaces is a valid password: it passes the length check while
+    // containing nothing at all.
+    .refine(
+      (password) => password.trim().length >= 12,
+      "password must contain at least 12 characters that are not surrounding whitespace",
+    ),
 });
 
 export type RegisterRequest = z.infer<typeof registerRequestSchema>;
 
-// Login is not strict about length or shape beyond being present. The credentials are
-// either right or they are not, and telling a caller their password was "too short to be
-// ours" is a hint about what our passwords look like.
+// Login imposes no length rule beyond being present. A "too short to be ours" rejection
+// would be a hint about what our passwords look like, and the credentials are either right
+// or they are not.
 export const loginRequestSchema = z.strictObject({
   email: normalisedEmail,
-  password: z.string().min(1, "password is required"),
+  password: passwordSchema.refine((password) => password.length > 0, "password is required"),
 });
 
 export type LoginRequest = z.infer<typeof loginRequestSchema>;

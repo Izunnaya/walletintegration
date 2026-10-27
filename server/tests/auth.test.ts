@@ -61,6 +61,39 @@ describe("registerRequestSchema", () => {
     ).toBe(false);
   });
 
+  it("accepts exactly 72 bytes and refuses longer ASCII or Unicode passwords", () => {
+    for (const password of ["a".repeat(72), "\u00e9".repeat(36)]) {
+      expect(registerRequestSchema.safeParse({ ...validRegistration, password }).success).toBe(true);
+    }
+    for (const password of ["a".repeat(73), "\u00e9".repeat(37), "\u{1f600}".repeat(19)]) {
+      expect(registerRequestSchema.safeParse({ ...validRegistration, password }).success).toBe(false);
+      expect(loginRequestSchema.safeParse({ email: validRegistration.email, password }).success).toBe(false);
+    }
+  });
+
+  it("refuses a password that is only whitespace", () => {
+    // Twelve spaces passes a plain length check while containing nothing. Internal spaces
+    // are still fine - a passphrase is the point - so the rule is about the trimmed length.
+    const tabsAndNewlines = String.fromCharCode(9, 10).repeat(6);
+    const whitespaceOnly = [" ".repeat(12), tabsAndNewlines, "   abc      "];
+    for (const password of whitespaceOnly) {
+      expect(
+        registerRequestSchema.safeParse({ ...validRegistration, password }).success,
+        `expected ${JSON.stringify(password)} to be refused`,
+      ).toBe(false);
+    }
+  });
+
+  it("keeps spaces inside a passphrase, and does not trim the secret", () => {
+    const padded = "  correct horse battery staple  ";
+    const result = registerRequestSchema.safeParse({ ...validRegistration, password: padded });
+
+    expect(result.success).toBe(true);
+    // Unchanged: trimming would silently alter the secret, and login does not trim either,
+    // so both sides always agree about what the password is.
+    expect(result.success && result.data.password).toBe(padded);
+  });
+
   it("requires a name", () => {
     expect(messagesOf({ ...validRegistration, name: "   " })).toContain("name is required");
   });
