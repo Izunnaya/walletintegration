@@ -3,9 +3,8 @@
 What every endpoint answers: the success shape, the failure shape, and which
 status code means what.
 
-Only `GET /health/live` is built. Everything else is the contract it will be
-built to, so a frontend or a reviewer can read the shape before the code exists.
-What is and is not implemented is marked throughout.
+Health, authentication, wallet lookup and `POST /transfers` are implemented.
+Transfer history and admin endpoints below remain planned.
 
 ---
 
@@ -77,11 +76,11 @@ unknown table in [domain.md](domain.md).
 | Endpoint | Access | Status |
 | --- | --- | --- |
 | `GET /health/live` | Public | **Built** |
-| `GET /health/ready` | Public | Not built |
-| `POST /auth/register` | Public | Not built |
-| `POST /auth/login` | Public | Not built |
-| `GET /wallets/me` | User | Not built |
-| `POST /transfers` | User | Not built |
+| `GET /health/ready` | Public | **Built** |
+| `POST /auth/register` | Public | **Built** |
+| `POST /auth/login` | Public | **Built** |
+| `GET /wallets/me` | User | **Built** |
+| `POST /transfers` | User | **Built** |
 | `GET /transfers` | User | Not built |
 | `GET /transfers/:id` | User | Not built |
 | `POST /admin/users/:id/block` | Admin | Not built |
@@ -96,7 +95,7 @@ stays true while the database is unreachable.
 200 { "status": "ok" }
 ```
 
-### `GET /health/ready` — not built
+### `GET /health/ready` — built
 
 Answers whether the database is reachable, and is the endpoint Render's health
 check points at. `200` when a query succeeds, `503` when it does not.
@@ -104,7 +103,7 @@ check points at. `200` when a query succeeds, `503` when it does not.
 Kept separate from liveness so a database outage is not reported as a dead
 process, and so readiness is never answered before a real check exists.
 
-### `POST /auth/register` — not built
+### `POST /auth/register` — built
 
 Creates a user and their zero-balance NGN wallet in one transaction, so a user
 can never exist without a wallet.
@@ -115,19 +114,18 @@ can never exist without a wallet.
 
 The email is trimmed and lowercased before uniqueness and blacklist matching —
 the same normalisation used everywhere. The role is always `customer`; a body
-containing `role`, `blocked`, `balance` or `is_system` is refused (**Q17**,
-open). A blacklisted email cannot register.
+containing `role`, `blocked`, `balance` or `is_system` is refused (strict Zod validation). A blacklisted email cannot register.
 
 `201` with the user and wallet. `400` malformed, `409` email taken, `422`
 blacklisted.
 
-### `POST /auth/login` — not built
+### `POST /auth/login` — built
 
 `200` with a JWT. `401` on bad credentials, with the same message whether the
 email is unknown or the password is wrong — distinguishing them tells an attacker
 which emails are registered.
 
-### `GET /wallets/me` — not built
+### `GET /wallets/me` — built
 
 The caller's own wallet. There is no endpoint for anyone else's. The wallet is
 found from the token's user id, never from a parameter.
@@ -136,14 +134,14 @@ found from the token's user id, never from a parameter.
 { "id": 7, "currency": "NGN", "balanceMinor": "150000" }
 ```
 
-### `POST /transfers` — not built
+### `POST /transfers` — built
 
 The one that matters. Requires an `Idempotency-Key` header.
 
 ```json
 {
-  "sourceWalletId": 7,
-  "destinationWalletId": 12,
+  "sourceWalletId": "7",
+  "destinationWalletId": "12",
   "currency": "NGN",
   "amountMinor": "150000"
 }
@@ -187,3 +185,44 @@ the endpoint that needs it rather than guessed here.
 
 `POST /admin/blacklist` and `DELETE /admin/blacklist/:id` are optional in the
 build spec and currently out of scope (**Q20**, open).
+
+## Transfer request and replay details
+
+`Idempotency-Key` is required: 1-128 ASCII letters, digits, `.`, `_`, `:` or `-`.
+Use a fresh UUID per intended transfer. Reuse it on network errors, `500` or `503`;
+do not generate a new key just because a response was lost. `503` includes
+`Retry-After: 1`. Keys are retained indefinitely for this MVP.
+
+Wallet IDs are positive decimal **strings** within PostgreSQL BIGINT range, just
+like the wallet endpoint's IDs. Numeric IDs are rejected. Amount is a string of
+kobo; currency must be `NGN`. Surrounding whitespace and leading zeros in numeric
+strings normalize before the request fingerprint is calculated.
+
+Success (`201`):
+
+```json
+{
+  "transfer": {
+    "id": "42",
+    "reference": "a61ea75c-9580-43b0-a106-6c550e17c209",
+    "sourceWalletId": "7",
+    "destinationWalletId": "12",
+    "amountMinor": "150000",
+    "currency": "NGN",
+    "createdAt": "2026-10-28T00:00:00.000Z"
+  }
+}
+```
+
+A replay returns the saved status and JSON values, including the original timestamp,
+reference and any original error.requestId. The X-Request-Id header identifies the
+current HTTP request. JSONB does not preserve JSON key order, so byte order is not
+a guarantee. Changed details with the same key return `409 IDEMPOTENCY_KEY_REUSED`.
+
+Unknown wallets return `404 WALLET_NOT_FOUND`. A source owned by someone else returns
+`403 NOT_WALLET_OWNER` before recipient restrictions or balances are disclosed.
+Known rejections (`403`, `404`, `422`) are saved; invalid headers/bodies and `401`
+are not. Business rejections include SAME_WALLET, SYSTEM_WALLET_NOT_TRANSFERABLE,
+SENDER_BLOCKED, SENDER_BLACKLISTED, RECIPIENT_BLOCKED, RECIPIENT_BLACKLISTED,
+CURRENCY_MISMATCH, INSUFFICIENT_FUNDS and BALANCE_LIMIT_EXCEEDED. No failed transfer
+or ledger entries are created. After fixing a business rejection, use a new key.

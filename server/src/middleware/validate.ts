@@ -1,6 +1,6 @@
 import type { NextFunction, Request, Response } from "express";
 import type { ZodType } from "zod";
-import { describeIssues, transferRequestSchema } from "../domain/transferRequest.ts";
+import { describeIssues, transferRequestSchema, idempotencyKeySchema } from "../domain/transferRequest.ts";
 import { loginRequestSchema, registerRequestSchema } from "../domain/authRequest.ts";
 
 // Where a malformed request is refused, before any financial work starts.
@@ -36,3 +36,13 @@ export const validateTransferRequest = validateBody(transferRequestSchema);
 
 export const validateRegisterRequest = validateBody(registerRequestSchema);
 export const validateLoginRequest = validateBody(loginRequestSchema);
+
+export const validateIdempotencyKey = (req: Request, res: Response, next: NextFunction) => {
+  const parsed = idempotencyKeySchema.safeParse(req.get("Idempotency-Key"));
+  if (!parsed.success) {
+    res.status(400).json({ error: { code: "INVALID_IDEMPOTENCY_KEY", message: "A valid Idempotency-Key header is required.", requestId: req.requestId } });
+    return;
+  }
+  res.locals.idempotencyKey = parsed.data;
+  next();
+};

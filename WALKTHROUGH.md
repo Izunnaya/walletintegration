@@ -277,3 +277,86 @@ changed. Keep the deployed API and database geographically close when deploying.
 
 References: https://node-postgres.com/apis/pool and
 https://neon.com/docs/introduction/compute-lifecycle.
+
+
+## Atomic transfers: implementation and defense
+
+The flow is `TransferRoute` -> authentication -> key and body validation ->
+`TransferController` -> `transferService`. The controller handles HTTP; the service
+owns one READ COMMITTED Prisma transaction. `transferLocks` contains only the SQL
+needed for explicit row locks, because Prisma's model operations do not express
+these locks. Parameters remain bound and the schema identifier is validated
+configuration, never request input.
+
+1. Validate IDs as decimal strings and convert to bigint, keeping exact values
+   beyond 2^53. The same database range now applies to JWT subjects.
+2. Claim (caller, POST /transfers, key) with Prisma createMany/skipDuplicates, which
+   uses conflict-aware insertion. A duplicate waits for the original transaction.
+   A matching fingerprint replays the stored result; different details return 409.
+3. Discover immutable wallet owners, lock user rows in ascending ID order, then
+   lock wallet rows in ascending ID order. Recheck ownership under those locks.
+4. Read both restrictions and blacklist matches after locking. Check funds, system
+   wallet exclusion, currency, and recipient BIGINT capacity before financial writes.
+5. Create the transfer, debit sender, credit recipient, insert the ledger pair and
+   save the success response. Only then commit. A business rejection saves only the
+   idempotency response and commits without moving money.
+
+### Why the user lock is FOR NO KEY UPDATE
+
+The idempotency row's foreign key takes a KEY SHARE lock on the caller. With FOR
+UPDATE on user rows, two opposite transfers could each hold a foreign-key lock the
+other needs to upgrade. FOR NO KEY UPDATE still excludes restriction changes and
+other transfer locks, but is compatible with KEY SHARE. Wallet rows use FOR UPDATE.
+Future admin restriction operations must acquire user locks before wallet locks,
+in ascending order, and update restrictions/audit together. Blacklist mutations
+must follow the same user-lock protocol. No blacklist management API exists yet.
+See https://www.postgresql.org/docs/17/explicit-locking.html.
+
+### Why there is no pending status migration
+
+The existing schema accepts only succeeded/rejected. The initial claim uses an
+uncommitted provisional rejected row with an empty body. Every normal new-claim
+return replaces it with a real rejection or success; thrown errors roll it back.
+It is never committed as a pending result or exposed to other requests. The unique
+constraint coordinates concurrent duplicates; no in-memory mutex is involved.
+
+### Timeouts and failure meaning
+
+Lock waits are bounded to five seconds, pool acquisition to five seconds, and the
+interactive transaction to thirty seconds. Deadlock/serialization failures retry
+only the entire rolled-back transaction, at most three retries (four attempts),
+with a small randomized delay. Other errors are not retried internally. Recognized
+connection and timeout errors return 503 with same-key guidance. Unexpected bugs
+remain 500 and roll back. If commit acknowledgement is lost, never infer that money
+failed to move: retrying the same key resolves whether a commit happened.
+
+Responses store JSON values, not raw response bytes. An error replay retains the
+original error.requestId; its HTTP X-Request-Id is fresh. Status, reference, IDs,
+amount and timestamp remain unchanged. A previously rejected key stays rejected
+even if funds arrive later; that new intent needs a new key. Keys have no automatic
+expiry in this MVP.
+
+### Evidence and limits
+
+The HTTP suite uses a disposable schema with real Prisma, PostgreSQL, JWTs and
+parallel requests. Setup funds wallets with matching system-wallet ledger entries.
+It checks duplicate keys, overspending, opposite directions, rejected-key replay,
+restrictions, ownership and system wallets. A test-only Prisma query extension
+throws after a real debit to prove application-error rollback. A held database
+user lock tests block-before-transfer ordering and lock-timeout recovery. A test
+barrier also proves transfer-before-block ordering, and a waiting duplicate is
+allowed to claim the key after the first attempt rolls back. The unit
+retry tests use a fake transaction runner to exercise retry limits; they do not
+prove database locking. No public fault-injection route or request flag exists.
+
+Transfer history, admin endpoints, rate limiting, a reconciliation command and
+live deployment verification remain separate work. These tests do not simulate
+an abrupt process crash or a network failure during COMMIT.
+
+
+Transfer feature verification: 82 unit tests and 21 auth/transfer PostgreSQL HTTP
+integration tests passed, along with TypeScript checking and the production build.
+The 16 transfer integration scenarios include both block/transfer orderings and
+rollback of a first claimant while a duplicate waits. The older schema/seed suites
+were not rerun for this feature; no schema migration changed. Temporary HTTP-test
+schemas were removed by successful teardown. This is not deployed verification.

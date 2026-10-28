@@ -4,6 +4,7 @@ import { respondNotFound, respondInternalError } from "./middleware/errorHandler
 import HealthRoute from "./routes/HealthRoute.ts";
 import AuthRoute from "./routes/AuthRoute.ts";
 import WalletRoute from "./routes/WalletRoute.ts";
+import TransferRoute from "./routes/TransferRoute.ts";
 
 const app = express();
 
@@ -19,6 +20,7 @@ app.use(express.json());
 app.use("/health", HealthRoute);
 app.use("/auth", AuthRoute);
 app.use("/wallets", WalletRoute);
+app.use("/transfers", TransferRoute);
 
 // These two run last. respondNotFound when no route matched, respondInternalError when a route threw
 app.use(respondNotFound);
