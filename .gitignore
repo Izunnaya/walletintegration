@@ -10,3 +10,7 @@ coverage/
 /Wallet Service Build Spec*.md
 
 /server/src/generated/
+
+# Internal tooling and its output. Not part of what the service ships.
+/server/scripts/audit-production.mjs
+/docs/production-audit-*.md

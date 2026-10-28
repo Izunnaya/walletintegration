@@ -24,8 +24,7 @@
     "test:integration": "vitest run tests/schema.test.ts tests/seed.test.ts tests/auth.integration.test.ts tests/transfers.integration.test.ts tests/transferStress.integration.test.ts tests/transferHistory.integration.test.ts tests/admin.integration.test.ts tests/hardening.integration.test.ts tests/rateLimit.integration.test.ts tests/loginCeiling.integration.test.ts tests/cors.integration.test.ts tests/reconciliation.test.ts tests/reconciliationBlindSpots.test.ts --no-file-parallelism",
     "verify:prisma": "node scripts/verify-prisma.mjs",
     "reconcile": "node src/reconcile.ts",
-    "admin:password": "node src/setAdminPassword.ts",
-    "audit:production": "node scripts/audit-production.mjs"
+    "admin:password": "node src/setAdminPassword.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",
