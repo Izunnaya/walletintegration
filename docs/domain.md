@@ -51,11 +51,11 @@ over-careful, the question to ask is which invariant it protects.
 
 Amounts are whole kobo, parsed and calculated as `bigint`, stored as `BIGINT`,
 and serialised to JSON as strings. No amount passes through a JavaScript
-`number` — see [Q1](../DECISIONS.md).
+`number` — see [ADR 1](decisions.md).
 
 A request supplies `amountMinor` as a positive integer string. Rejected on sight:
 zero, negatives, decimals, anything non-numeric, anything above the maximum
-(currently 1,000,000,000 kobo; **Q16** remains open for product confirmation), a currency mismatch, and a transfer where source and destination
+(1,000,000,000 kobo, a deliberate ceiling rather than a product requirement), a currency mismatch, and a transfer where source and destination
 are the same wallet.
 
 Naming carries the unit. `amountMinor`, `senderBalanceMinor` — never `amount` or
@@ -83,7 +83,7 @@ There is no account deletion.
 A user can be stopped two ways, and both stop them **sending and receiving**:
 
 - **Blocked** — set by an admin, reversible by an admin.
-- **Blacklisted** — matched by email (**Q18**, open) against `blacklist_entries`.
+- **Blacklisted** — matched by email against `blacklist_entries`.
   Checked at registration, so a blacklisted email cannot register at all, and
   again inside every transfer transaction for both parties.
 
@@ -114,7 +114,7 @@ it.
 It is fenced on every side. No endpoint reads `is_system` from a request, none can
 create or change it, registration always creates customer wallets, and a customer
 transfer naming it on either side is rejected. Only the seed uses it. See
-[Q12](../DECISIONS.md).
+([ADR 9](decisions.md)).
 
 ---
 
@@ -138,10 +138,10 @@ order inside that transaction is fixed:
 Locks before reads, always. A balance read before a lock is a balance that may
 already have changed. Users before wallets, and each in sorted id order, so two
 transfers in opposite directions acquire the same locks consistently — see
-[Q8 and Q9](../DECISIONS.md).
+[ADR 2 and ADR 3](decisions.md).
 
 **Only successful transfers are stored.** A rejection lives on the idempotency
-record and in the logs ([Q7](../DECISIONS.md)).
+record and in the logs ([ADR 8](decisions.md)).
 
 ---
 
@@ -168,11 +168,8 @@ with another's.
 Stored with it is a fingerprint of the *normalised* details — source wallet,
 destination wallet, currency, amount — not the raw JSON, so the same intent
 formatted differently is still the same intent. This is request-content fingerprinting,
-not browser or device tracking. The current helper is `fingerprintTransfer`; the
-clearer proposed name is `createTransferRequestFingerprint`. The name and possible
-file move are recommendations, not implemented changes. See Q25 in
-[DECISIONS.md](../DECISIONS.md) and section 10 of
-[WALKTHROUGH.md](../WALKTHROUGH.md) for examples and limitations.
+not browser or device tracking. The helper is `fingerprintTransfer`. See
+[ADR 7](decisions.md) for why the fingerprint exists and what a mismatch means.
 
 | Situation | Result |
 | --- | --- |
@@ -183,11 +180,11 @@ file move are recommendations, not implemented changes. See Q25 in
 | The transaction rolled back | No key, no movement. Retrying with the same key runs it |
 | The outcome is unknown to the client | Retry with the same key to find out |
 
-A rejection is committed as the key's answer ([Q11](../DECISIONS.md)). Trying
+A rejection is committed as the key's answer ([ADR 5](decisions.md)). Trying
 again after a top-up is a new intent and needs a new key.
 
 The record is written inside the transfer transaction, so nothing half-finished
-is ever visible ([Q10](../DECISIONS.md)).
+is ever visible ([ADR 4](decisions.md)).
 
 ---
 
@@ -246,14 +243,15 @@ proves the arithmetic holds. Both are needed and neither substitutes.
 
 ---
 
-## Still open
+## Boundaries of this model
 
-**Q16** the maximum transfer amount, **Q17** whether registration rejects or
-ignores privileged fields, **Q18** which identifier the blacklist matches on,
-**Q19** the rate limit numbers, **Q20** whether admin blacklist endpoints are in
-scope. See [OPEN-QUESTIONS.md](../OPEN-QUESTIONS.md).
+The maximum transfer amount, the rate limit numbers and the blacklist's matching
+identifier are all settled and recorded in [decisions](decisions.md). Registration
+refuses unknown fields rather than ignoring them, because the schemas are strict.
 
+Administering the blacklist, reversals, and multiple live currencies are out of scope.
+What the model does not cover and what the tests do not yet prove are both listed in
+[known limitations](known-limitations.md).
 
-Transfer IDs now use decimal strings in JSON and bigint internally. The transfer
-service is implemented; see the atomic transfer section in WALKTHROUGH.md for
-the NO KEY UPDATE user lock refinement, timeout budgets and replay request IDs.
+For the locking, timeout budgets and replay behaviour behind the transfer, see the
+transfer section of [architecture.md](architecture.md).

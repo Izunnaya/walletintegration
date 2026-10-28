@@ -10,3 +10,10 @@ coverage/
 /Wallet Service Build Spec*.md
 
 /server/src/generated/
+
+# Working notes kept out of the published repository: interview preparation,
+# the long-form decision log and the open-questions scratchpad. The published
+# equivalents are docs/decisions.md and docs/known-limitations.md.
+/DECISIONS.md
+/WALKTHROUGH.md
+/OPEN-QUESTIONS.md
