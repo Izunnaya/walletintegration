@@ -118,5 +118,37 @@ export async function runReconciliation(
           `,
         });
 
+        // 7. The answer a retry would replay still describes the transfer it points at.
+        //
+        //    A succeeded idempotency record stores the exact response body the first attempt
+        //    returned, and a repeat of that key replays it verbatim without reading the
+        //    transfer again. That makes the stored body a second, independent copy of the
+        //    amount - and until this check existed, nothing compared the two. A record whose
+        //    body claimed a different figure than the transfer it references passed every
+        //    other check here, because the ledger itself was perfectly consistent: the money
+        //    moved correctly and only the receipt lied.
+        //
+        //    It also catches a succeeded record whose transfer has gone, and one that claims
+        //    success without naming a transfer at all.
+        results.push({
+          name: "stored idempotent answers match their transfers",
+          detail: "a succeeded key whose saved response disagrees with the transfer it replays",
+          rows: await client.$queryRaw`
+            SELECT i.id::text AS record_id,
+                   i.transfer_id::text AS transfer_id,
+                   i.response_body #>> '{transfer,amountMinor}' AS stored_amount,
+                   t.amount_minor::text AS actual_amount
+              FROM ${namespace}.idempotency_records i
+              LEFT JOIN ${namespace}.transfers t ON t.id = i.transfer_id
+             WHERE i.status = 'succeeded'
+               AND (
+                     i.transfer_id IS NULL
+                  OR t.id IS NULL
+                  OR i.response_body #>> '{transfer,amountMinor}' IS DISTINCT FROM t.amount_minor::text
+                  OR i.response_body #>> '{transfer,id}' IS DISTINCT FROM t.id::text
+               )
+          `,
+        });
+
         return results;
 }

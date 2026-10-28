@@ -5,7 +5,7 @@ code will attach.
 
 The shape is routes, controllers, middleware and models, with `index.ts` setting
 up and starting the app. It is deliberately the layout used in the earlier
-projects here rather than anything novel — see [Q2](../DECISIONS.md) for the one
+projects here rather than anything novel — see [the superseded list](decisions.md) for the one
 place that choice cost something.
 
 ---
@@ -80,7 +80,7 @@ handler and the transfer service write to the same one. Callers use pino's own
 methods; there is no wrapper. JSON when stdout is a pipe, pretty when it is a
 terminal, the `Authorization` header redacted, and `/health` left unlogged.
 `console.log` stays in the command-line tools, whose output a person reads. See
-**Q31**.
+[ADR 16](decisions.md).
 
 ### `routes/` — wiring only
 
@@ -261,7 +261,7 @@ Node 22, Express 5, strict TypeScript, PostgreSQL, Prisma 7, Zod, dotenv, and
 Vitest. Prisma's pg adapter owns the underlying connection pool. Models preserve
 existing SQL table names and bigint money. Custom migration SQL preserves CHECK
 constraints and the partial index; future row locks run through the transaction
-client's parameterized raw-query API. See Q13 and [the Prisma workflow](prisma.md).
+client's parameterized raw-query API. See [ADR 10](decisions.md) and [the Prisma workflow](prisma.md).
 
 Node runs source TypeScript in development. Client generation runs on install/build,
 and compilation rewrites source imports to JavaScript for deployment. Generated

@@ -5,11 +5,27 @@ import assert from "node:assert/strict";
 
 // Bounded production checks: three temporary customers, at most 20 kobo in test wallets,
 // concurrency at most six. Financial records remain; balances are restored before limits.
-const base = process.env.AUDIT_BASE_URL ?? "https://walletintegration-6t6r.onrender.com";
+// Required, with no default. This script creates accounts and moves money, and it is in a
+// public repository alongside a README that documents how to run it. A default target meant
+// anyone who cloned this and ran the documented command - or a contributor who assumed it
+// pointed somewhere local - would act on the live service by accident. The target has to be
+// named deliberately.
+const base = process.env.AUDIT_BASE_URL;
+if (!base) {
+  throw new Error(
+    "Set AUDIT_BASE_URL to the service you intend to audit. There is no default: this script creates accounts and moves money.",
+  );
+}
 if (new URL(base).protocol !== "https:") throw new Error("Production audit requires HTTPS");
 const report = { startedAt: new Date().toISOString(), baseUrl: base, checks: [], samples: [], testUsers: [] };
-const funderEmail = process.env.AUDIT_FUNDER_EMAIL ?? "ada@example.com";
-const funderPassword = process.env.AUDIT_FUNDER_PASSWORD ?? "demo-password-2026";
+// Also required. The demo password is published on purpose and reset by every seed, so it
+// is not a secret - but defaulting to it meant the zero-config path signed in as a real
+// account on a real service.
+const funderEmail = process.env.AUDIT_FUNDER_EMAIL;
+const funderPassword = process.env.AUDIT_FUNDER_PASSWORD;
+if (!funderEmail || !funderPassword) {
+  throw new Error("Set AUDIT_FUNDER_EMAIL and AUDIT_FUNDER_PASSWORD for the account that lends the test float.");
+}
 let total = 0;
 async function request(label, path, { token, body, headers = {}, method = body === undefined ? "GET" : "POST" } = {}) {
   if (++total > 450) throw new Error("Audit request budget exhausted");

@@ -8,19 +8,19 @@ checked and merged before the next begins. Work discovered mid-stage is added to
 the plan, not folded in silently.
 
 **Questions are not answered in code.** A question raised during the build goes
-into [OPEN-QUESTIONS.md](OPEN-QUESTIONS.md) with its options, what each costs,
-and what it blocks. When it is answered it moves to [DECISIONS.md](DECISIONS.md),
+into [known limitations](docs/known-limitations.md) with its options, what each costs,
+and what it blocks. When it is answered it moves to [decisions](docs/decisions.md),
 keeping its Q-number, with the reasoning and what was ruled out.
 
 That rule has one exception, from the build spec itself: where a question is
-routine and the simplest call is obvious, make it, record it in DECISIONS.md, and
+routine and the simplest call is obvious, make it, record it in docs/decisions.md, and
 keep going. The open questions file is for the ones where guessing would be
 expensive to undo.
 
 Scope comes from the build spec and the development guide. Both live outside this
 repository and are excluded by `.gitignore`. Where they conflict, the build spec
 wins, and the conflict gets recorded rather than quietly resolved —
-[Q5](DECISIONS.md) is one that did.
+([ADR 16](docs/decisions.md)) is one that did.
 
 ## Branches
 
@@ -139,14 +139,18 @@ Not useful:
 if (user.isBlocked) {
 ```
 
-Extended reasoning goes in DECISIONS.md, not into the source.
+Extended reasoning goes in docs/decisions.md, not into the source.
 
 ## Tests
 
-Vitest now covers pure money, request, fingerprint, and policy behavior. HTTP
-and PostgreSQL integration tests remain outstanding; see **Q15** in
-[OPEN-QUESTIONS.md](OPEN-QUESTIONS.md). Q26 in [DECISIONS.md](DECISIONS.md)
-records the current evidence and its limits.
+Vitest covers the pure money, request, fingerprint and policy behaviour, and a set of
+PostgreSQL integration suites that exercise real locking, idempotency under concurrency,
+fault injection and the HTTP surface. `npm test` from `server/` runs everything and takes
+roughly eleven minutes.
+
+[known limitations](docs/known-limitations.md) lists what the suite still does not
+establish — crash recovery mid-commit, multi-instance behaviour, and deployed proxy
+attribution.
 
 Test conventions:
 
