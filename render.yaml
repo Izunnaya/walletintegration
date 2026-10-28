@@ -1,0 +1,30 @@
+# Render blueprint. The dashboard can do all of this by hand; this file means the settings
+# are reviewable and reproducible rather than living only in someone's browser.
+services:
+  - type: web
+    name: wallet-service
+    runtime: node
+    plan: free
+    # The API is one package inside the repository, so Render builds from server/ and the
+    # frontend is ignored entirely.
+    rootDir: server
+    # npm ci installs exactly the lockfile. postinstall runs prisma generate, so the client
+    # exists before tsc compiles against it. migrate deploy applies any pending migration
+    # before the new build is started - on the free plan there is no separate release phase,
+    # so it belongs here.
+    buildCommand: npm ci && npm run migrate && npm run build
+    startCommand: npm start
+    # Render restarts the service if this stops answering. It points at readiness, not
+    # liveness, because a process that is up but cannot reach the database should not be
+    # taking requests.
+    healthCheckPath: /health/ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # Render sets PORT itself and the app reads it.
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: SEED_ADMIN_PASSWORD
+        sync: false

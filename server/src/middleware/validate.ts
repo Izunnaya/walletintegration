@@ -2,6 +2,8 @@ import type { NextFunction, Request, Response } from "express";
 import type { ZodType } from "zod";
 import { describeIssues, transferRequestSchema, idempotencyKeySchema } from "../domain/transferRequest.ts";
 import { loginRequestSchema, registerRequestSchema } from "../domain/authRequest.ts";
+import { transferHistoryQuerySchema } from "../domain/transferHistoryQuery.ts";
+import { restrictionRequestSchema } from "../domain/restrictionRequest.ts";
 
 // Where a malformed request is refused, before any financial work starts.
 //
@@ -46,3 +48,28 @@ export const validateIdempotencyKey = (req: Request, res: Response, next: NextFu
   res.locals.idempotencyKey = parsed.data;
   next();
 };
+
+// Query parameters rather than a body. Same shape of failure, so a caller sees one error
+// format whichever part of the request was wrong.
+export const validateQuery = (schema: ZodType) => (req: Request, res: Response, next: NextFunction) => {
+  const result = schema.safeParse(req.query);
+
+  if (result.success) {
+    res.locals.query = result.data;
+    next();
+    return;
+  }
+
+  res.status(400).json({
+    error: {
+      code: "VALIDATION_FAILED",
+      message: "The query parameters are invalid.",
+      requestId: req.requestId,
+      details: describeIssues(result.error),
+    },
+  });
+};
+
+export const validateTransferHistoryQuery = validateQuery(transferHistoryQuerySchema);
+
+export const validateRestrictionRequest = validateBody(restrictionRequestSchema);

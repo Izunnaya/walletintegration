@@ -714,3 +714,80 @@ The 16 transfer integration scenarios include both block/transfer orderings and
 rollback of a first claimant while a duplicate waits. The older schema/seed suites
 were not rerun for this feature; no schema migration changed. Temporary HTTP-test
 schemas were removed by successful teardown. This is not deployed verification.
+
+## Q19 — Rate limits are generous, and the numbers are written down
+
+**Decided:** 60 transfers a minute per caller, 20 auth requests a minute per IP, 240 reads a
+minute per caller. In-memory store.
+
+The tension is real: a reviewer demonstrating concurrency fires dozens of simultaneous
+transfers at one wallet, and a limit tight enough to look serious would answer `429` and
+read as a broken demo rather than a working limiter. Generous, with the numbers documented,
+makes the choice visible instead of accidental.
+
+Auth is keyed by **IP**, not by account, and that distinction is the point. Keying a login
+attempt by the account being attempted would let someone try one password against a thousand
+accounts without ever filling a bucket. Transfers and reads are keyed by account once
+authenticated, falling back to IP, because an unauthenticated flood sharing one bucket would
+lock every caller out together.
+
+`trust proxy` is set to `1` because Render puts one proxy in front: without it `req.ip` is the
+proxy on every request and the IP-keyed limiter would be useless. Not `true`, because
+trusting the whole chain would let a caller spoof `X-Forwarded-For` and get a fresh bucket
+per request.
+
+**Ruled out:** tight limits with instructions to raise them for testing, which asks a
+reviewer to read before testing; an environment switch to disable the limiter, which is one
+more surface and a switch that must never be off in deployment.
+**Reversible:** yes, they are four numbers. The in-memory store is the real limitation: it is
+correct for one instance and wrong for more, since each process keeps its own counts, so N
+instances allow N times the limit and a restart forgets everything. A shared store is the fix
+and is not needed while this runs as a single service.
+
+## Q20 — The admin blacklist endpoints stay out
+
+**Decided:** the blacklist is managed by the seed only. `POST /admin/blacklist` and
+`DELETE /admin/blacklist/:id` are not built.
+
+They are optional in the build spec, and leaving them out buys something concrete rather than
+just saving work: with no runtime writes to `blacklist_entries`, there is no race between
+blacklisting someone and a transfer involving them, so the transfer's blacklist check needs
+no lock on that table. The seeded entry still demonstrates the rule, because registration
+refuses `fraudster@example.com`.
+
+Block and unblock *are* built, and they are where the interesting behaviour is: they take the
+same user row lock a transfer takes, so the two serialise. A third audited operation would
+exercise the same mechanism without proving anything new.
+
+**Ruled out:** adding them audited and locking, which is the cheapest thing to add afterwards
+and the most expensive to debug while the transfer is still settling.
+**Reversible:** yes. It is additive, and the audit table and locking pattern already exist.
+
+## Q21 — The database is Neon, so the expiry deadline is gone
+
+**Decided:** PostgreSQL on Neon, with the API on Render. Not Render's own PostgreSQL.
+
+A free Render database becomes inaccessible 30 days after creation, and the 14-day grace
+period does not keep it working. The build spec is explicit that a README warning does not
+satisfy "a live URL we can hit", so that clock would have to be tracked and the database
+upgraded before submission. Neon's free tier does not expire that way, and Render reaches it
+over the network like any other host.
+
+That removes a deadline rather than managing one, which is why this is settled rather than
+open.
+
+Two consequences worth knowing. The pooled Neon endpoint is PgBouncer, which rejects startup
+parameters and shares session state between clients — the application uses it and sets none,
+while the integration tests use the direct endpoint because they scope a schema. And an
+outbound block on port 5432 on the developer's network means local work needs a VPN, while
+Render is unaffected because it connects from its own network.
+
+**Ruled out:** Render PostgreSQL with a diary note; creating the database late to push the
+expiry out, which contradicts deploying early.
+**Reversible:** yes, it is a connection string.
+---
+
+## Nothing is open
+
+Every question raised during the build has been answered. [OPEN-QUESTIONS.md](OPEN-QUESTIONS.md)
+is empty, and stays in the repository because the next question goes there first.
