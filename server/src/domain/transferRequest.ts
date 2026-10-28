@@ -1,16 +1,20 @@
 import { z } from "zod";
 import { amountMinorSchema, currencySchema } from "./money.ts";
 
-const walletId = z
-  .number()
-  .int("must be a whole number")
-  .positive("must be a positive integer")
-  .max(Number.MAX_SAFE_INTEGER, "is out of range");
+// IDs use strings on the wire so BIGINT values never pass through a double.
+export const databaseIdSchema = z.string().trim().regex(/^\d+$/, "must contain digits only")
+  .transform((value) => BigInt(value))
+  .pipe(z.bigint().positive().max(9_223_372_036_854_775_807n));
+
+export const idempotencyKeySchema = z.string().regex(
+  /^[A-Za-z0-9._:-]{1,128}$/,
+  "Idempotency-Key must be 1-128 letters, digits, dots, underscores, colons or hyphens",
+);
 
 // Reject unknown fields, including attempts to supply the authenticated user's identity.
 export const transferRequestSchema = z.strictObject({
-  sourceWalletId: walletId,
-  destinationWalletId: walletId,
+  sourceWalletId: databaseIdSchema,
+  destinationWalletId: databaseIdSchema,
   currency: currencySchema,
   amountMinor: amountMinorSchema,
 });

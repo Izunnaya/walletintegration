@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import { z } from "zod";
+import { databaseIdSchema } from "../domain/transferRequest.ts";
 
 // Issuing and reading the JWT.
 //
@@ -36,7 +37,7 @@ export type AuthenticatedCaller = {
 // The payload is parsed on the way in, not trusted. A token we signed should always match,
 // but "should" is not a guarantee once a secret is rotated or a payload shape changes.
 const claimsSchema = z.object({
-  sub: z.string().regex(/^\d+$/, "subject must be a numeric user id"),
+  sub: databaseIdSchema,
   role: z.enum(["customer", "admin"]),
 });
 
@@ -70,6 +71,6 @@ export function readToken(token: string): TokenResult {
 
   return {
     ok: true,
-    caller: { userId: BigInt(claims.data.sub), role: claims.data.role },
+    caller: { userId: claims.data.sub, role: claims.data.role },
   };
 }

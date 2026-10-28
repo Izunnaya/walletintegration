@@ -212,6 +212,8 @@ describe("session tokens", () => {
 
     for (const claims of [
       { sub: "not-a-number", role: "customer" },
+      { sub: "0", role: "customer" },
+      { sub: "9223372036854775808", role: "customer" },
       { sub: "1", role: "superuser" },
       { sub: "1" },
       { role: "admin" },
