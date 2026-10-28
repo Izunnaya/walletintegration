@@ -12,6 +12,18 @@
     {
       "key": "token",
       "value": ""
+    },
+    {
+      "key": "sourceWalletId",
+      "value": ""
+    },
+    {
+      "key": "destinationWalletId",
+      "value": ""
+    },
+    {
+      "key": "transferKey",
+      "value": ""
     }
   ],
   "item": [
@@ -449,30 +461,99 @@
             },
             "description": ""
           }
-        }
-      ]
-    },
-    {
-      "name": "Not yet built",
-      "item": [
+        },
         {
-          "name": "Transfers (404 for now)",
+          "name": "Save my wallet as source",
           "request": {
-            "method": "POST",
+            "method": "GET",
             "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              },
               {
                 "key": "Authorization",
                 "value": "Bearer {{token}}"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"sourceWalletId\": 81,\n  \"destinationWalletId\": 82,\n  \"currency\": \"NGN\",\n  \"amountMinor\": \"150000\"\n}"
+            "url": {
+              "raw": "{{baseUrl}}/wallets/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "me"
+              ]
             },
+            "description": "The wallet is found from the token's user id, never from a parameter. Log in first."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) pm.collectionVariables.set('sourceWalletId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Save my wallet as destination",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/wallets/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "wallets",
+                "me"
+              ]
+            },
+            "description": "The wallet is found from the token's user id, never from a parameter. Log in first."
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200) pm.collectionVariables.set('destinationWalletId', pm.response.json().id);"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Transfers",
+      "description": "Login as Ada and save source wallet. Login as Bode and save destination wallet. Login as Ada again. Send a new transfer, then replay it or test a key conflict. The New transfer request generates a fresh key and really moves money each time; use Replay for retries. IDs are strings, not numbers.",
+      "item": [
+        {
+          "name": "New transfer - generates a fresh key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{transferKey}}"
+              }
+            ],
             "url": {
               "raw": "{{baseUrl}}/transfers",
               "host": [
@@ -482,8 +563,159 @@
                 "transfers"
               ]
             },
-            "description": "Not implemented yet. Will need an Idempotency-Key header."
-          }
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceWalletId\": \"{{sourceWalletId}}\",\n  \"destinationWalletId\": \"{{destinationWalletId}}\",\n  \"currency\": \"NGN\",\n  \"amountMinor\": \"150000\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('transferKey', pm.variables.replaceIn('{{$guid}}'));"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected status', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Replay last transfer - same key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{transferKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceWalletId\": \"{{sourceWalletId}}\",\n  \"destinationWalletId\": \"{{destinationWalletId}}\",\n  \"currency\": \"NGN\",\n  \"amountMinor\": \"150000\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected status', () => pm.response.to.have.status(201));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Same key, different amount (409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{transferKey}}"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceWalletId\": \"{{sourceWalletId}}\",\n  \"destinationWalletId\": \"{{destinationWalletId}}\",\n  \"currency\": \"NGN\",\n  \"amountMinor\": \"150001\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected status', () => pm.response.to.have.status(409));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Missing key (400)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{token}}"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/transfers",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "transfers"
+              ]
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"sourceWalletId\": \"{{sourceWalletId}}\",\n  \"destinationWalletId\": \"{{destinationWalletId}}\",\n  \"currency\": \"NGN\",\n  \"amountMinor\": \"150000\"\n}"
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Expected status', () => pm.response.to.have.status(400));"
+                ]
+              }
+            }
+          ]
         }
       ]
     }

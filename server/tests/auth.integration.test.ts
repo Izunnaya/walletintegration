@@ -5,8 +5,8 @@ import { authPrisma, prepareAuthDatabase, closeAuthDatabase, failWalletCreation 
 
 // Replace only the database connection: queries and transactions use real PostgreSQL.
 vi.mock("../src/models/db.ts", async () => {
-  const { authPrisma } = await import("./authDatabase.ts");
-  return { prisma: authPrisma };
+  const { authPrisma, authSchema } = await import("./authDatabase.ts");
+  return { prisma: authPrisma, databaseSchema: authSchema };
 });
 vi.hoisted(() => { process.env.JWT_SECRET = "auth-integration-test-secret-not-for-production"; });
 import app from "../src/app.ts";

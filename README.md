@@ -30,25 +30,28 @@ looks over-careful, the question to ask is which one it protects.
    compensating entries.
 10. A timeout does not mean a transfer failed.
 
-**The full guarantees are not proven yet.** Migration files, schemas, and pure
-rules exist. Proving financial behavior still needs the transaction implementation
-and real PostgreSQL concurrency tests.
+**The core transfer is implemented.** The PostgreSQL integration suite exercises
+atomicity, idempotency and concurrent requests; this is not a load-test or deployed
+availability guarantee.
 
 ## Where it stands
 
-The HTTP foundation, Prisma models/migration, repeatable seed, shared Prisma
-client, Zod schemas, transfer policy, fingerprint helper, and 50 unit tests exist.
-The app currently mounts only the health route. Migration execution on a target
-database is not established by the existence of those files.
+Implemented: liveness/readiness, registration, login, JWT authentication, the
+caller's wallet, and `POST /transfers`. Prisma owns the seven-table data model and
+migrations; Zod validates requests. Transfers claim an idempotency key, lock users
+and wallets, check restrictions, and commit the debit, credit, ledger pair and
+stored response together.
 
-Readiness, deployment, authentication, wallet endpoints, the atomic
-idempotent transfer, history, admin restrictions, rate limits, and reconciliation
-remain to be built. [WALKTHROUGH.md](WALKTHROUGH.md) explains the actual files and
-limits; Q23?Q27 in [DECISIONS.md](DECISIONS.md) capture recent domain decisions.
+Next: transfer history, audited admin block/unblock, rate limits, reconciliation,
+and deployed verification. There is no live deployment established by this repo.
+[WALKTHROUGH.md](WALKTHROUGH.md) explains the request flow and
+[DECISIONS.md](DECISIONS.md) records the tradeoffs.
 
-`npm test` runs Vitest from `server/`. The earlier HTTP tests described in Q2 were
-removed; the current unit suite tests pure behavior without importing the listening
-app. Q15 remains open for HTTP/PostgreSQL integration-test access.
+Run commands from `server/`. Auth and transfer HTTP tests create disposable schemas
+using DATABASE_URL and remove them afterward. Older schema/seed tests run inside
+rollback transactions in the configured application's schema. Do not point test
+commands at a production database. Mocked retry tests prove only retry decisions;
+real PostgreSQL tests exercise locking and financial writes.
 
 ## Running it locally
 
@@ -67,11 +70,11 @@ npm run dev              # http://localhost:3000
 | `npm run typecheck` | `tsc --noEmit` |
 | `npm run build` | Compiles `src/` to `dist/` |
 | `npm start` | Runs the compiled server |
-| `npm test` | Runs all Vitest suites; the database suites need `TEST_DATABASE_URL` |
+| `npm test` | Runs all Vitest suites; the database suites need `DATABASE_URL` |
 | `npm run test:unit` | Runs only the tests that need no database |
 | `npm run migrate` | Applies Prisma migrations |
 | `npm run seed` | Seeds demo wallets through Prisma |
-| `npm run verify:prisma` | Checks Prisma in an isolated PostgreSQL schema |
+| `npm run test:integration` | Runs schema, seed, auth and transfer PostgreSQL tests |
 
 ```sh
 curl -i http://localhost:3000/health/live

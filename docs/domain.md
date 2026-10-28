@@ -137,7 +137,7 @@ order inside that transaction is fixed:
 
 Locks before reads, always. A balance read before a lock is a balance that may
 already have changed. Users before wallets, and each in sorted id order, so two
-transfers in opposite directions cannot deadlock — see
+transfers in opposite directions acquire the same locks consistently — see
 [Q8 and Q9](../DECISIONS.md).
 
 **Only successful transfers are stored.** A rejection lives on the idempotency
@@ -252,3 +252,8 @@ proves the arithmetic holds. Both are needed and neither substitutes.
 ignores privileged fields, **Q18** which identifier the blacklist matches on,
 **Q19** the rate limit numbers, **Q20** whether admin blacklist endpoints are in
 scope. See [OPEN-QUESTIONS.md](../OPEN-QUESTIONS.md).
+
+
+Transfer IDs now use decimal strings in JSON and bigint internally. The transfer
+service is implemented; see the atomic transfer section in WALKTHROUGH.md for
+the NO KEY UPDATE user lock refinement, timeout budgets and replay request IDs.

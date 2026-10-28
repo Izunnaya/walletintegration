@@ -25,14 +25,14 @@ export function fingerprintTransfer(request: TransferRequest): string {
 }
 
 export type PartyState = {
-  userId: number;
+  userId: bigint;
   isBlocked: boolean;
   isBlacklisted: boolean;
 };
 
 export type WalletState = {
-  id: number;
-  ownerId: number;
+  id: bigint;
+  ownerId: bigint;
   currency: string;
   balanceMinor: bigint;
   isSystem: boolean;
@@ -50,7 +50,7 @@ export type TransferRejection =
   | "INSUFFICIENT_FUNDS";
 
 export type TransferPolicyInput = {
-  authenticatedUserId: number;
+  authenticatedUserId: bigint;
   sender: PartyState;
   recipient: PartyState;
   sourceWallet: WalletState;
