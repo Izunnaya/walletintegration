@@ -19,7 +19,7 @@ async function inRolledBackTransaction(work: (client: Prisma.TransactionClient) 
         admin_audit_entries, wallets, users, blacklist_entries CASCADE`;
       await work(client);
       throw rollback;
-    }, { maxWait: 20_000, timeout: 120_000 });
+    }, { maxWait: 20_000, timeout: 60_000 });
   } catch (error) {
     if (error !== rollback) throw error;
   }
@@ -47,7 +47,7 @@ describe("applySeed", () => {
     await expect(testPrisma.$transaction(async (client) => {
       await applySeed(client);
       throw failure;
-    }, { maxWait: 20_000, timeout: 120_000 })).rejects.toBe(failure);
+    }, { maxWait: 20_000, timeout: 60_000 })).rejects.toBe(failure);
 
     const after = await testPrisma.$transaction([
       testPrisma.user.count(), testPrisma.wallet.count(), testPrisma.transfer.count(),

@@ -1,6 +1,7 @@
 // "import type" because Node runs this TypeScript directly: these are types, not real exports of express
 import type { Request, Response, NextFunction } from "express";
 import { classifyTransactionError } from "../models/transactionErrors.ts";
+import { logger } from "../logger.ts";
 
 // Runs when no route matched the request
 export const respondNotFound = (req: Request, res: Response) => {
@@ -66,21 +67,16 @@ export const respondInternalError = (
   const transient = fault === null && classifyTransactionError(error) !== "unexpected";
 
   if (transient) {
-    console.warn("request_unavailable", {
-      requestId: req.requestId,
-      path: req.path,
-      error,
-    });
+    // err rather than error: that is the key pino's serializer looks for, and it is what
+    // turns an Error into type, message and stack instead of the "{}" a plain object cast
+    // of an Error produces.
+    logger.warn({ requestId: req.requestId, path: req.path, err: error }, "request_unavailable");
   } else if (fault) {
-    console.warn("request_rejected", {
-      requestId: req.requestId,
-      path: req.path,
-      code: fault.code,
-    });
+    logger.warn({ requestId: req.requestId, path: req.path, code: fault.code }, "request_rejected");
   } else {
     // The real error goes to the logs. The client only gets the request ID, because the
     // message and stack would tell an attacker about our database, file paths and libraries.
-    console.error("request_failed", { requestId: req.requestId, path: req.path, error });
+    logger.error({ requestId: req.requestId, path: req.path, err: error }, "request_failed");
   }
 
   // Once a response has started sending, its status and headers are already gone, so we cannot

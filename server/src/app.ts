@@ -1,6 +1,7 @@
 import express from "express";
 import { corsMiddleware } from "./middleware/cors.ts";
 import { attachRequestId } from "./middleware/requestId.ts";
+import { httpLogger } from "./logger.ts";
 import { respondNotFound, respondInternalError } from "./middleware/errorHandler.ts";
 import HealthRoute from "./routes/HealthRoute.ts";
 import AuthRoute from "./routes/AuthRoute.ts";
@@ -24,6 +25,11 @@ app.use(corsMiddleware);
 // parser, and with the ID assigned after it that failure would be the one error a caller
 // cannot quote an ID for - exactly when they most need one.
 app.use(attachRequestId);
+
+// After attachRequestId, so the automatic request line carries the same ID the caller was
+// given in X-Request-Id, and before the routes, so a request is logged even when it fails
+// in the body parser. One JSON line per request, written when the response finishes.
+app.use(httpLogger);
 
 // Reads the JSON body of a request into req.body. Without this line req.body is undefined.
 app.use(express.json());

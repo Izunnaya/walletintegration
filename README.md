@@ -173,29 +173,35 @@ wins and the conflict is recorded rather than quietly resolved.
 A question raised while building goes into **OPEN-QUESTIONS.md** with its
 options, what each costs, and what it blocks. When it is answered it moves to
 **DECISIONS.md**, keeping its Q-number, with the reasoning and what was ruled
-out. All twenty-six are settled.
+out. Every one is settled and nothing is open.
 
 The point of keeping the rejected options is that a later reader can tell a
 deliberate trade-off from an oversight. Two of the settled ones went against the
 obvious answer — [Q2](DECISIONS.md), which cost the test suite, and
 [Q5](DECISIONS.md), which went against the build spec's own request for
-structured logs. Both say so.
+structured logs. Both say so, and **both have since been reversed** — [Q31](DECISIONS.md)
+put `pino` back. Q5 predicted that reversal would be cheap and said why; it was
+nine call sites. That is the log earning its keep rather than just recording.
 
 ## Deployment
 
-Not deployed yet. The plan, with the trap that matters:
+Live on Render, built from `server/` as the root of this monorepo. See
+[docs/deployment.md](docs/deployment.md) for the step-by-step and the checks that
+prove it is up.
 
 - Secrets (`DATABASE_URL`, `JWT_SECRET`, admin credentials) live in Render
   environment variables, never in the repository.
+- Logs are JSON on Render and pretty-printed in a terminal, decided by whether
+  stdout is a TTY. `LOG_LEVEL` defaults to `info`, which is one line per request
+  carrying the caller's `X-Request-Id`.
 - Migrations run as part of the deploy. The seed is run manually, once.
 - Render's health check points at `/health/ready`.
 - Free web services sleep when idle, so the first request after a pause is slow.
   That is not a bug and the submission should say so.
 - **A free Render PostgreSQL database becomes inaccessible 30 days after
-  creation**, and the 14-day grace period does not keep it working. The creation
-  and expiry dates go in this README the day it is created. If the review window
-  could reach the expiry, the database is upgraded — a README warning does not
-  satisfy "a live URL we can hit". This is **Q21**.
+  creation**, and the 14-day grace period does not keep it working. That deadline
+  is the reason the database is **Neon** and not Render PostgreSQL, so there is no
+  expiry date to diary. This is **Q21**.
 
 ## Stack
 

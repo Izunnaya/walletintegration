@@ -178,6 +178,11 @@ deliberate choice about who maintains the code, not an oversight.
 also tried and was worse than both.
 **Reversible:** yes, cheaply, and the call sites are few.
 
+**Reversed by [Q31](#q31--the-service-logs-json-the-command-line-tools-do-not).** The
+prediction held: it was nine call sites and the library went back in without a redesign. The
+reason it was reversible is that every call site already had the shape `("event_name", { fields })`,
+which is pino's signature with the arguments the other way round.
+
 ## Q6 — `.env` is loaded by `dotenv`
 
 **Decided:** `dotenv` is a dependency and `dotenv.config()` runs at the top of
@@ -785,7 +790,7 @@ Render is unaffected because it connects from its own network.
 **Ruled out:** Render PostgreSQL with a diary note; creating the database late to push the
 expiry out, which contradicts deploying early.
 **Reversible:** yes, it is a connection string.
-## Q26 — The admin password is set by its own command, and never published
+## Q30 — The admin password is set by its own command, and never published
 
 **Decided:** the seed writes the admin password once and never resets it. Changing it
 deliberately is `npm run admin:password`, which reads `SEED_ADMIN_PASSWORD`. The README does
@@ -817,6 +822,48 @@ to prevent; keeping the password in the README and treating it as a demo value, 
 caused this; deleting and reseeding the admin row, which the audit entries referencing it now
 make impossible.
 **Reversible:** yes. It is one command and one row.
+
+## Q31 — The service logs JSON, the command-line tools do not
+
+**Decided:** `pino` and `pino-http` for everything in the request path. `console.log` stays
+in `reconcile.ts`, `seed.ts`, `setAdminPassword.ts` and the seed's balance table.
+
+This reverses [Q5](#q5--logging-is-console-not-a-logging-library), which is the one decision
+the build spec argued against. Q5 said the reversal would be cheap and it was: nine call
+sites, each already written as `("event_name", { fields })`, which is pino's own signature
+with the arguments swapped.
+
+**The split is the actual decision.** Structured logging is not "JSON everywhere". It is
+JSON for output a machine filters, and text for output a person reads. The service writes to
+Render's log stream, where the only way to find one failed transfer among thousands of lines
+is to query a field — so every line is one JSON object carrying the request ID the caller was
+given in `X-Request-Id`. The reconciliation report is read by an operator at a terminal, and
+an aligned table of balances is the readable form; wrapping it in JSON would make the one
+audience it has worse off.
+
+Three details are deliberate rather than default:
+
+- **`genReqId` reuses the existing ID.** `attachRequestId` already generated it and put it in
+  the response header. pino-http would otherwise generate its own, and the request line and
+  the error line would carry two unrelated IDs — which looks perfectly fine until somebody
+  tries to use one.
+- **The `Authorization` header is redacted, and headers are dropped from the serializer
+  anyway.** pino-http logs the full header set by default, so a bearer token valid for the
+  rest of its lifetime would sit in a log aggregator that far more people can read than can
+  read the database. Two independent defences, tested separately so removing one breaks a test.
+- **`/health` is not logged.** Render calls `/health/ready` every few seconds forever, and
+  those lines would bury the requests somebody cares about.
+
+Pretty-printing is chosen by `process.stdout.isTTY`, not by `NODE_ENV`: a terminal gets
+colour, a pipe gets JSON. That means Render and the test runner both get JSON with nothing
+configured, and keeps pino-pretty's worker thread out of the test process.
+
+**Ruled out:** keeping `console` and accepting the spec gap, which was Q5 and is no longer
+worth the cost now that the deployment produces real logs to search; JSON everywhere,
+including the reconciliation report, which serves no reader; a wrapper around pino so call
+sites do not depend on it, which is the abstraction this project keeps refusing — callers use
+pino's own methods and `src/logger.ts` holds configuration only.
+**Reversible:** yes, and Q5 proved it in both directions.
 
 ---
 
