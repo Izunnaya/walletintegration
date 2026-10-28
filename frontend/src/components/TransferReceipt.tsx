@@ -1,6 +1,8 @@
 import { ArrowLeft, Check } from "lucide-react";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { money } from "@/lib/money";
+import { easeOut, panelVariants } from "@/lib/motion";
 import type { Transfer } from "@/api/types";
 
 type Props = {
@@ -21,7 +23,13 @@ const TransferReceipt = ({ transfer, success = false, onBack, backLabel }: Props
   ];
 
   return (
-    <section className="max-w-xl rounded-xl border bg-card p-6">
+    <motion.section
+      className="max-w-xl rounded-xl border bg-card p-6"
+      variants={panelVariants}
+      initial="initial"
+      animate="animate"
+      transition={easeOut}
+    >
       {onBack && (
         <Button variant="ghost" size="sm" onClick={onBack}>
           <ArrowLeft />
@@ -53,7 +61,7 @@ const TransferReceipt = ({ transfer, success = false, onBack, backLabel }: Props
           {transfer.note}
         </p>
       )}
-    </section>
+    </motion.section>
   );
 };
 

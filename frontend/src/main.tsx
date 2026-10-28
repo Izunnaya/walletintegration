@@ -2,8 +2,10 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { BrowserRouter as Router } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MotionConfig } from "framer-motion";
 import "./App.css";
 import AppRoutes from "./AppRoutes";
+import SkeletonProvider from "./components/SkeletonProvider";
 import { WorkspaceProvider } from "./components/WorkspaceProvider";
 
 const queryClient = new QueryClient({
@@ -24,7 +26,18 @@ createRoot(document.getElementById("root")!).render(
     <Router>
       <QueryClientProvider client={queryClient}>
         <WorkspaceProvider>
-          <AppRoutes />
+          {/*
+            reducedMotion="user" is the whole accessibility story for animation, set once.
+            framer-motion then drops transforms and scale for anyone whose system asks for
+            reduced motion, keeping opacity only, so no component has to check for itself
+            and none of them can forget. Vestibular disorders make movement genuinely
+            unpleasant, and this is the setting people use to say so.
+          */}
+          <MotionConfig reducedMotion="user">
+            <SkeletonProvider>
+              <AppRoutes />
+            </SkeletonProvider>
+          </MotionConfig>
         </WorkspaceProvider>
       </QueryClientProvider>
     </Router>

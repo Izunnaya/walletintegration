@@ -1,7 +1,9 @@
 import { ArrowDownLeft, ArrowLeftRight, ArrowUpRight, Copy, Wallet } from "lucide-react";
-import { toast } from "sonner";
+import { AnimatePresence, motion } from "framer-motion";
+import { notify } from "@/lib/notify";
 import StatusBadge from "@/components/StatusBadge";
 import { money } from "@/lib/money";
+import { easeOut, panelVariants } from "@/lib/motion";
 import type { Transfer, WalletUser } from "@/api/types";
 
 const SummaryTile = ({
@@ -41,18 +43,24 @@ const BalanceCard = ({ wallet, transfers }: { wallet: WalletUser; transfers: Tra
   const copyWalletId = async () => {
     try {
       await navigator.clipboard.writeText(wallet.id);
-      toast.success("Wallet ID copied");
+      notify.success("Wallet ID copied");
     } catch {
       // The clipboard API is refused without a user gesture and over plain http, so this is
       // a real path rather than a defensive catch.
-      toast.error("Could not copy. Please select the wallet ID manually.");
+      notify.error(null, "Could not copy. Please select the wallet ID manually.");
     }
   };
 
   const [whole, fraction] = money(wallet.balanceMinor).split(".");
 
   return (
-    <section className="mb-7 overflow-hidden rounded-xl border bg-card">
+    <motion.section
+      className="mb-7 overflow-hidden rounded-xl border bg-card"
+      variants={panelVariants}
+      initial="initial"
+      animate="animate"
+      transition={easeOut}
+    >
       <div className="flex flex-col justify-between gap-8 p-6 sm:flex-row lg:p-7">
         <div>
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -60,10 +68,25 @@ const BalanceCard = ({ wallet, transfers }: { wallet: WalletUser; transfers: Tra
             Available balance
           </div>
           <div className="mt-5 flex items-baseline gap-3">
-            <span className="text-[44px] font-medium leading-none tracking-[-2px] sm:text-[50px]">
-              {whole}
-              <span className="text-muted-foreground/60">.{fraction}</span>
-            </span>
+            {/*
+              Keyed on the balance, so a transfer settling swaps the old figure for the new
+              one rather than having it blink. This is the only place in the app where motion
+              is doing more than easing something in: money changing is the one thing on
+              screen that genuinely is an event.
+            */}
+            <AnimatePresence mode="popLayout" initial={false}>
+              <motion.span
+                key={wallet.balanceMinor}
+                className="text-[44px] font-medium leading-none tracking-[-2px] sm:text-[50px]"
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={easeOut}
+              >
+                {whole}
+                <span className="text-muted-foreground/60">.{fraction}</span>
+              </motion.span>
+            </AnimatePresence>
             <span className="text-xs text-muted-foreground">NGN</span>
           </div>
           <div className="mt-5 flex items-center gap-2 text-[11px] text-muted-foreground">
@@ -102,7 +125,7 @@ const BalanceCard = ({ wallet, transfers }: { wallet: WalletUser; transfers: Tra
           value={String(transfers.length).padStart(2, "0")}
         />
       </div>
-    </section>
+    </motion.section>
   );
 };
 

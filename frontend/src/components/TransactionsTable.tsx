@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { motion } from "framer-motion";
 import {
   ArrowDownLeft,
   ArrowLeftRight,
@@ -28,6 +29,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { money } from "@/lib/money";
+import { easeOut, panelVariants } from "@/lib/motion";
 import type { Transfer } from "@/api/types";
 
 const PAGE_SIZE = 6;
@@ -67,7 +69,13 @@ const TransactionsTable = ({ transfers, full = false }: Props) => {
     : transfers.slice(0, RECENT_COUNT);
 
   return (
-    <section className="overflow-hidden rounded-xl border bg-card">
+    <motion.section
+      className="overflow-hidden rounded-xl border bg-card"
+      variants={panelVariants}
+      initial="initial"
+      animate="animate"
+      transition={easeOut}
+    >
       <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-5">
         <div>
           <h2 className="text-[15px] font-semibold">
@@ -252,7 +260,7 @@ const TransactionsTable = ({ transfers, full = false }: Props) => {
           <span className="hidden sm:inline">All times in your local timezone</span>
         )}
       </div>
-    </section>
+    </motion.section>
   );
 };
 

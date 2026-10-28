@@ -1,4 +1,5 @@
 import { ArrowUpRight } from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -10,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { money } from "@/lib/money";
+import { quick } from "@/lib/motion";
 
 type Props = {
   open: boolean;
@@ -94,16 +96,26 @@ const TransferConfirmDialog = ({
             Idempotency-Key: {idempotencyKey}
           </p>
 
-          {message && (
-            <Alert variant={unconfirmed ? "default" : "destructive"}>
-              <AlertDescription>
-                <p>{message}</p>
-                {requestId && (
-                  <p className="mt-2 break-all text-[10px]">Request ID: {requestId}</p>
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
+          <AnimatePresence>
+            {message && (
+              <motion.div
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={quick}
+                className="overflow-hidden"
+              >
+                <Alert variant={unconfirmed ? "default" : "destructive"}>
+                  <AlertDescription>
+                    <p>{message}</p>
+                    {requestId && (
+                      <p className="mt-2 break-all text-[10px]">Request ID: {requestId}</p>
+                    )}
+                  </AlertDescription>
+                </Alert>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         <DialogFooter>

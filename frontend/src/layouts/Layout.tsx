@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useLocation } from "react-router-dom";
+import { Outlet, useLocation } from "react-router-dom";
+import { AnimatePresence } from "framer-motion";
 import { Menu } from "lucide-react";
 import { Toaster } from "@/components/ui/sonner";
 import { Button } from "@/components/ui/button";
@@ -10,12 +11,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import GlobalProgressBar from "@/components/GlobalProgressBar";
+import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
 import WorkspaceFooter from "@/components/WorkspaceFooter";
 
-// Everything that repeats on every screen: the sidebar, the top bar, the footer and the
-// toaster. A page renders its own content and nothing else, which is the point of having
-// this file.
+// Everything that repeats on every screen: the sidebar, the top bar, the footer, the toaster
+// and the progress bar. A page renders its own content and nothing else, which is the point
+// of having this file.
 
 const titles: Record<string, string> = {
   "/": "Overview",
@@ -31,13 +34,14 @@ function breadcrumb(pathname: string): string {
   return "Workspace";
 }
 
-const Layout = ({ children }: { children: React.ReactNode }) => {
+const Layout = () => {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
   const { pathname } = useLocation();
 
   return (
     <div className="min-h-screen bg-background text-foreground">
+      <GlobalProgressBar />
       <Toaster position="bottom-right" />
 
       {mobileNavOpen && (
@@ -78,10 +82,18 @@ const Layout = ({ children }: { children: React.ReactNode }) => {
         </header>
 
         <main className="mx-auto max-w-[1240px] px-5 py-9 lg:px-10 lg:py-10">
-          {/* Keyed on the path so the entrance animation replays when the route changes. */}
-          <div key={pathname} className="page-enter">
-            {children}
-          </div>
+          {/*
+            mode="wait" so the outgoing screen finishes leaving before the next one arrives;
+            overlapping them makes the page jump while both are in the layout. initial={false}
+            so the first screen after a cold load is simply there, rather than animating in
+            while the user is already looking at it.
+          */}
+          <AnimatePresence mode="wait" initial={false}>
+            <PageTransition key={pathname}>
+              <Outlet />
+            </PageTransition>
+          </AnimatePresence>
+
           <WorkspaceFooter />
         </main>
       </div>
