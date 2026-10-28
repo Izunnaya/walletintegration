@@ -1,7 +1,14 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../generated/prisma/client.ts";
 
-export function createDatabaseClient(connectionString: string) {
+// transactionOptions is for callers that are far from the database. A batch
+// $transaction([...]) does not accept maxWait per call, so the only place to raise it is
+// here. The application deliberately does not raise it: a transfer that cannot get a
+// connection quickly should fail fast and return 503, not queue for fifteen seconds.
+export function createDatabaseClient(
+  connectionString: string,
+  clientOptions: { transactionOptions?: { maxWait?: number; timeout?: number } } = {},
+) {
   const url = new URL(connectionString);
   const schema = url.searchParams.get("schema") ?? "public";
 
@@ -19,7 +26,10 @@ export function createDatabaseClient(connectionString: string) {
     connectionString: url.toString(),
     ssl: isLocal ? false : { rejectUnauthorized: true },
     enableChannelBinding: !isLocal,
+    // Reuse connections across short pauses instead of reconnecting after 10 seconds.
+    idleTimeoutMillis: 60_000,
+    connectionTimeoutMillis: 10_000,
   }, { schema });
 
-  return new PrismaClient({ adapter });
+  return new PrismaClient({ adapter, ...clientOptions });
 }

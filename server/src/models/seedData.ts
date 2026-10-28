@@ -1,6 +1,34 @@
+import { randomBytes } from "node:crypto";
 import { Prisma } from "../generated/prisma/client.ts";
+import { hashPassword } from "./password.ts";
 
-const DEMO_PASSWORD_HASH = "$2b$10$seedonlyplaceholderhashreplacedbyauthwork000000000000";
+// The demo customers' password is published in the README, so it is reset on every run.
+// Keeping it in step with the documentation is the whole point of a fixture account, and
+// nothing of value is protected by it.
+export const DEMO_CUSTOMER_PASSWORD = "demo-password-2026";
+
+// The admin password is a real credential, so it is written once and never reset - the
+// build spec is explicit about that, because a deployed admin password is changed
+// deliberately and not by whoever runs the seed next. Locally it falls back to a documented
+// default; in deployment SEED_ADMIN_PASSWORD is set in the environment.
+export const DEFAULT_LOCAL_ADMIN_PASSWORD = "admin-password-2026";
+
+function adminPassword(): string {
+  const configured = process.env.SEED_ADMIN_PASSWORD;
+
+  if (configured === undefined) {
+    const host = new URL(process.env.DATABASE_URL ?? "postgres://localhost").hostname;
+    if (!["localhost", "127.0.0.1", "[::1]"].includes(host)) {
+      throw new Error("SEED_ADMIN_PASSWORD is required when seeding a non-local database.");
+    }
+    return DEFAULT_LOCAL_ADMIN_PASSWORD;
+  }
+
+  if (configured.length === 0 || Buffer.byteLength(configured, "utf8") > 72) {
+    throw new Error("SEED_ADMIN_PASSWORD must be non-empty and at most 72 UTF-8 bytes.");
+  }
+  return configured;
+}
 
 type DemoCustomer = {
   email: string;
@@ -22,12 +50,26 @@ const BLACKLISTED = [
   { email: "fraudster@example.com", reason: "Seeded to demonstrate registration being refused" },
 ];
 
-// Never update existing users: rerunning the seed must not reset their password.
-async function ensureUser(client: Prisma.TransactionClient, email: string, name: string, role: string) {
+// resetPassword is false for the admin and the funding account, so rerunning the seed
+// cannot change a credential that matters. It is true for the demo customers, whose
+// password is published, so the database always matches the README.
+async function ensureUser(
+  client: Prisma.TransactionClient,
+  email: string,
+  name: string,
+  role: string,
+  passwordHash: string,
+  resetPassword = false,
+) {
   await client.user.createMany({
-    data: { email, name, role, passwordHash: DEMO_PASSWORD_HASH },
+    data: { email, name, role, passwordHash },
     skipDuplicates: true,
   });
+
+  if (resetPassword) {
+    await client.user.update({ where: { email }, data: { passwordHash } });
+  }
+
   return client.user.findUniqueOrThrow({ where: { email } });
 }
 
@@ -39,7 +81,10 @@ async function ensureWallet(client: Prisma.TransactionClient, ownerId: bigint) {
 }
 
 async function ensureSystemWallet(client: Prisma.TransactionClient) {
-  const owner = await ensureUser(client, SYSTEM_OWNER_EMAIL, "System Funding", "admin");
+  // A random hash nobody holds the input to, so the wallet that is allowed to go negative
+  // has no usable login. Only the seed ever moves money out of it.
+  const unusableHash = await hashPassword(randomBytes(32).toString("hex"));
+  const owner = await ensureUser(client, SYSTEM_OWNER_EMAIL, "System Funding", "admin", unusableHash);
   const existing = await client.wallet.findFirst({ where: { isSystem: true } });
   if (existing) return existing;
   return client.wallet.create({ data: { ownerId: owner.id, isSystem: true } });
@@ -117,12 +162,26 @@ export async function reportState(client: Prisma.TransactionClient, schema: stri
 // The caller owns the transaction; all writes use its Prisma transaction client.
 export async function applySeed(client: Prisma.TransactionClient) {
   const systemWallet = await ensureSystemWallet(client);
-  const admin = await ensureUser(client, ADMIN_EMAIL, "Wallet Admin", "admin");
+  const admin = await ensureUser(
+    client,
+    ADMIN_EMAIL,
+    "Wallet Admin",
+    "admin",
+    await hashPassword(adminPassword()),
+  );
   await ensureWallet(client, admin.id);
 
+  const demoCustomerHash = await hashPassword(DEMO_CUSTOMER_PASSWORD);
   const funded: string[] = [];
   for (const customer of DEMO_CUSTOMERS) {
-    const user = await ensureUser(client, customer.email, customer.name, "customer");
+    const user = await ensureUser(
+      client,
+      customer.email,
+      customer.name,
+      "customer",
+      demoCustomerHash,
+      true,
+    );
     const wallet = await ensureWallet(client, user.id);
     const didFund = await fundWallet(client, systemWallet.id, wallet.id, customer);
     if (didFund) funded.push(customer.email);

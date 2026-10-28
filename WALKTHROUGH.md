@@ -82,7 +82,7 @@ The system wallet is the only wallet allowed below zero. Funding customers throu
 paired ledger entries leaves a record of where every demo kobo came from. Stable
 references and one transaction prevent repeated runs from crediting money twice.
 Existing user passwords are not overwritten. The current placeholder password hash
-still needs replacing as part of authentication; these accounts are not login-ready.
+has since been replaced with bcrypt hashing by the authentication work; see the authentication section below.
 
 ### Why reporting errors are separate
 
@@ -191,6 +191,89 @@ The original guidance documents and `.env` stay ignored. Generated Prisma files
 are ignored too. Environment examples contain placeholders. A previously exposed
 credential still requires rotation; changing files cannot erase historical exposure.
 
-Remaining stages include authentication, readiness and deployment, atomic transfers,
+Remaining stages include readiness and deployment, atomic transfers,
 admin restrictions, history, rate limits, reconciliation, and deployed verification.
 Prisma changes database tooling; it does not remove those requirements.
+
+
+## Authentication: request to database
+
+`src/app.ts` assembles Express without opening a port. `src/index.ts` loads the
+local environment and starts listening. This lets tests use the same routes on an
+ephemeral local port.
+
+Registration and login pass through Zod middleware once. It places the normalized,
+validated output in `res.locals.body`; controllers declare its inferred schema type
+and consume it without parsing again or casting the raw request body. Routes must
+keep the validator before its controller. The response-local value lives only for
+that request. The shared email schema trims and lowercases email; passwords are
+never trimmed or normalized. Strict objects reject unknown fields, including
+privileged fields such as role and balance.
+
+We kept bcrypt, as permitted by the build spec, with cost 12. Bcrypt uses only the
+first 72 UTF-8 bytes, so both endpoints reject longer passwords through Zod. A
+character count alone is insufficient: accented letters and emoji can take multiple
+bytes. Registration retains its 12-character minimum; login allows existing shorter
+passwords. Previously accepted passwords over 72 bytes need a password reset before
+login under this rule. Do not silently truncate them. Cost should be measured on the
+deployment hardware; hashing makes guessing more expensive, not impossible.
+
+Registration checks the normalized email against the blacklist before hashing.
+Prisma then creates the customer and zero-balance NGN wallet in one transaction.
+A failed wallet insert rolls back the user. The database unique constraint handles
+duplicate email races; the controller returns 409. Login returns the same 401 for
+unknown users and incorrect passwords, using a dummy bcrypt comparison to reduce
+timing differences. A correctly authenticated blocked user gets 403 and no token.
+The dummy hash is not a credential; the missing-user check always rejects the login.
+
+JWT signing and verification use jsonwebtoken with HS256 pinned and a one-hour
+expiry. JWT_SECRET must be configured with at least 32 characters; generate it
+randomly. The token identifies the caller. Transfer authorization and restrictions
+still need database checks inside the transfer transaction. `/wallets/me` finds the
+wallet using the authenticated caller ID, never a supplied owner ID.
+
+Auth integration tests use real HTTP requests, bcrypt, JWT and PostgreSQL. Only the
+database module is redirected to a uniquely named temporary schema. The tests apply
+the baseline migration there and remove that exact schema afterward. They cover
+normalized registration/login, one empty wallet, blacklist and privileged-field
+rejection, duplicate emails, invalid credentials, blocked login, and a database
+trigger that forces wallet creation to fail so rollback can be observed. This is
+separate from the older schema/seed tests, which currently use DATABASE_URL and
+rollback transactions in the application's schema. These auth tests do not prove
+transfer concurrency, rate limiting, or deployed behavior.
+
+
+## API latency review (28 October 2026)
+
+The shared Prisma client now keeps idle connections for 60 seconds instead of the
+pg default of 10 seconds, and bounds new connection attempts to 10 seconds. This
+reduces repeated TCP/TLS setup during short pauses; it is not a SQL execution
+timeout. The server runs SELECT 1 before listening, so connection setup happens
+at startup and startup fails if the database is unreachable. This moves work out
+of the first request; it does not remove that work.
+
+Wallet lookup uses the existing unique (ownerId, currency) key and selects only
+id, currency and balance. Blacklist lookup selects only id, and login selects only
+the identity, restriction and password fields it consumes. No new index is needed:
+email and the wallet owner/currency pair already have unique indexes. Blacklist
+results are not cached, password cost is unchanged, and registration remains atomic.
+
+Local HTTP measurements against the configured hosted database:
+
+| Request | Before | After |
+| --- | --- | --- |
+| Blacklist rejection, first measured request | 17,415 ms | 248 ms |
+| Blacklist rejection, subsequent requests | 221-228 ms | 228-235 ms |
+| Wallet read, three requests | 10,165-16,957 ms | 221-228 ms |
+| Login rejection | 456-485 ms | 467-472 ms |
+| Database read after 11 seconds idle | 1,787 ms | 223 ms |
+
+These are a small sequential sample, not a load test or a latency guarantee. The
+initial database readiness request still took 1.6-2 seconds in the probe, which
+bypassed the startup entrypoint. The results do not establish the exact cause of
+every earlier outlier. Neon can suspend idle compute; a long-idle wakeup or network
+latency can still affect responses. No hosting plan or scale-to-zero setting was
+changed. Keep the deployed API and database geographically close when deploying.
+
+References: https://node-postgres.com/apis/pool and
+https://neon.com/docs/introduction/compute-lifecycle.

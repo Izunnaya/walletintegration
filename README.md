@@ -84,6 +84,32 @@ so a database outage is never reported as a dead process.
 A port already in use produces a startup error; stop the other server or set a
 different `PORT`.
 
+## Demo credentials
+
+Created by `npm run seed`. Local fixtures, published here deliberately so a reviewer can
+sign in without being sent anything.
+
+| Account | Password | Holds | Use it for |
+| --- | --- | --- | --- |
+| `ada@example.com` | `demo-password-2026` | NGN 500,000 | The funded sender |
+| `bode@example.com` | `demo-password-2026` | NGN 250,000 | The recipient |
+| `chidi@example.com` | `demo-password-2026` | NGN 10 | Insufficient funds |
+| `admin@wallet.internal` | `admin-password-2026` | NGN 0 | Admin-only endpoints |
+| `fraudster@example.com` | no account | — | Blacklisted; registration refuses it |
+
+`system@wallet.internal` owns the funding wallet and **cannot be signed into at all**. The
+seed gives it a hash of random bytes nobody holds the input to, so the one wallet allowed to
+go negative has no usable login.
+
+The three customer passwords are reset on every seed run, so the database always matches
+this table. The admin password is written once and never reset, because it is a real
+credential: in deployment it comes from `SEED_ADMIN_PASSWORD` and is shared privately,
+never published.
+
+**Postman:** import [docs/wallet-service.postman_collection.json](docs/wallet-service.postman_collection.json).
+Run any Login request first; it stores the token in a `{{token}}` collection variable that
+every protected request then uses.
+
 ## Repository layout
 
 ```
