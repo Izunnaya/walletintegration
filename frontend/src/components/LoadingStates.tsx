@@ -1,22 +1,5 @@
 import { useEffect, useState } from "react";
 import Skeleton from "react-loading-skeleton";
-
-// Placeholders shaped like the thing that is coming.
-//
-// The export faked loading with two grey rectangles, which is the version of this that makes
-// the screen jump: the boxes are the wrong size, the real content lands, and everything
-// moves. These mirror the real layout - same card, same borders, same number of table rows,
-// same column widths - so when the data arrives it fills the shape already on screen and
-// nothing shifts.
-//
-// react-loading-skeleton rather than the shadcn Skeleton div, because it does three things
-// by hand otherwise: it sizes from the surrounding text, it takes `count` for repeated
-// lines, and its shimmer is theme-aware through SkeletonProvider. The pulsing div was fine
-// for one box and does not scale to a whole application.
-
-// The API is on Render's free plan: it stops when idle and takes most of a minute to start
-// again. Without this the first request of the day looks like a hang, and a reviewer opening
-// the link cold is exactly the person who hits it.
 const SLOW_REQUEST_MS = 3000;
 
 export const SlowRequestNotice = () => {
@@ -31,7 +14,7 @@ export const SlowRequestNotice = () => {
 
   return (
     <p role="status" className="mb-6 text-sm text-muted-foreground">
-      Waking up the server, this can take up to a minute.
+      This is taking longer than usual. Please keep this page open.
     </p>
   );
 };
@@ -53,19 +36,6 @@ export const BalanceCardSkeleton = () => (
         <Skeleton width={190} height={62} />
       </div>
     </div>
-    <div className="grid border-t bg-muted/20 sm:grid-cols-3">
-      {[0, 1, 2].map((tile) => (
-        <div key={tile} className="flex items-start gap-3 border-b px-6 py-5 last:border-0 sm:border-r sm:border-b-0 lg:px-7">
-          <Skeleton width={32} height={32} />
-          <div className="flex-1">
-            <Skeleton width={90} height={11} />
-            <div className="mt-2">
-              <Skeleton width={120} height={20} />
-            </div>
-          </div>
-        </div>
-      ))}
-    </div>
   </section>
 );
 
@@ -79,7 +49,10 @@ export const TransactionsTableSkeleton = ({ rows = 5 }: { rows?: number }) => (
     </div>
     <div className="border-t">
       {Array.from({ length: rows }, (_, index) => (
-        <div key={index} className="flex items-center gap-4 border-b px-6 py-4 last:border-0">
+        <div
+          key={index}
+          className="flex items-center gap-4 border-b px-6 py-4 last:border-0"
+        >
           <Skeleton circle width={36} height={36} />
           <div className="flex-1">
             <Skeleton width={170} height={13} />
@@ -100,37 +73,6 @@ export const TransactionsTableSkeleton = ({ rows = 5 }: { rows?: number }) => (
   </section>
 );
 
-export const UsersTableSkeleton = ({ rows = 5 }: { rows?: number }) => (
-  <section className="overflow-hidden rounded-xl border">
-    <div className="flex flex-wrap items-center justify-between gap-4 p-5">
-      <div>
-        <Skeleton width={140} height={14} />
-        <div className="mt-1">
-          <Skeleton width={220} height={12} />
-        </div>
-      </div>
-      <Skeleton width={210} height={32} />
-    </div>
-    <div className="border-t">
-      {Array.from({ length: rows }, (_, index) => (
-        <div key={index} className="flex items-center gap-4 border-b px-5 py-5 last:border-0">
-          <div className="flex-1">
-            <Skeleton width={150} height={13} />
-            <div className="mt-1">
-              <Skeleton width={190} height={11} />
-            </div>
-          </div>
-          <div className="hidden sm:block">
-            <Skeleton width={130} height={12} />
-          </div>
-          <Skeleton width={70} height={20} />
-          <Skeleton width={64} height={28} />
-        </div>
-      ))}
-    </div>
-  </section>
-);
-
 export const ReceiptSkeleton = () => (
   <section className="max-w-xl rounded-xl border bg-card p-6">
     <Skeleton width={150} height={28} />
@@ -141,14 +83,10 @@ export const ReceiptSkeleton = () => (
     <div className="my-5">
       <Skeleton width={180} height={36} />
     </div>
-    {/* count rather than a loop: the library repeats the line and spaces it itself. */}
+
     <Skeleton count={6} height={16} className="mb-3" />
   </section>
 );
-
-// Shown while a lazily-loaded route is still being fetched. It cannot be shaped like the
-// screen that is coming, because which screen that is is not known until the chunk resolves -
-// so it is a heading and two panels, which every screen in this app begins with.
 export const RouteFallback = () => (
   <div aria-busy="true">
     <Skeleton width={220} height={28} />
