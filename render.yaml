@@ -32,3 +32,7 @@ services:
       # UI is blocked by the browser even though the API answers correctly.
       - key: CORS_ORIGINS
         sync: false
+      # Logs are JSON here because stdout is a pipe, not a terminal. info keeps one line per
+      # request; debug is for a live investigation and should be put back afterwards.
+      - key: LOG_LEVEL
+        value: info

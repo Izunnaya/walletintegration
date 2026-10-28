@@ -150,6 +150,7 @@ export async function reportState(client: Prisma.TransactionClient, schema: stri
      ORDER BY w.is_system DESC, u.email
   `;
 
+  // A table for a person at a terminal, not a log line for a search index - see reconcile.ts.
   console.log("wallet                          balance        ledger sum");
   for (const row of wallets) {
     const label = row.email.padEnd(30).slice(0, 30);

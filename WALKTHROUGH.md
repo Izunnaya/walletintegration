@@ -32,10 +32,13 @@ will use parameterized SQL through the Prisma transaction client.
 
 | File | What to explain |
 | --- | --- |
-| `server/src/index.ts` | Loads dotenv, creates Express, installs middleware, mounts routes, and listens |
+| `server/src/index.ts` | Loads dotenv **first**, proves the database is reachable, then listens. Nothing else |
+| `server/src/app.ts` | Builds the app and its middleware stack, and exports it **without listening**, so tests can mount it |
+| `server/src/logger.ts` | The one `pino` instance plus the `pino-http` options: redaction, request-ID reuse, health-check silence |
+| `server/src/middleware/cors.ts` | The origin allowlist, and the two headers a browser client cannot work without |
 | `server/src/routes/HealthRoute.ts` | Wires `/health/live` to its controller |
 | `server/src/controllers/HealthController.ts` | Returns process liveness, without claiming database readiness |
-| `server/src/middleware/requestId.ts` | Generates a UUID for logs and error correlation |
+| `server/src/middleware/requestId.ts` | Generates a UUID for logs and error correlation. Runs **before** `express.json()` |
 | `server/src/middleware/errorHandler.ts` | Returns JSON 404/500 responses and keeps unexpected error details in server logs |
 | `server/src/middleware/validate.ts` | Uses a Zod schema and formats invalid fields; transfer wiring is still pending |
 | `server/src/domain/money.ts` | Amount/currency schemas and bigint-to-string serialization |
@@ -49,7 +52,7 @@ will use parameterized SQL through the Prisma transaction client.
 | `server/src/models/db.ts` | Exports one shared application client |
 | `server/src/models/seedData.ts` | Seed fixtures, ORM writes, ledger-backed funding, report aggregation |
 | `server/src/seed.ts` | Owns seed transaction, post-commit reporting, and disconnect |
-| `server/tests/database.ts` | Requires a separate test target and refuses the application schema |
+| `server/tests/database.ts` | Connects on the **direct** Neon endpoint, one shared schema, every test rolled back |
 | `server/scripts/verify-prisma.mjs` | Verifies migrations, tests, seed repeats, and baseline adoption in a disposable schema |
 
 The old `server/src/migrate.ts` runner is removed. The seven original SQL files
@@ -360,3 +363,57 @@ The 16 transfer integration scenarios include both block/transfer orderings and
 rollback of a first claimant while a duplicate waits. The older schema/seed suites
 were not rerun for this feature; no schema migration changed. Temporary HTTP-test
 schemas were removed by successful teardown. This is not deployed verification.
+
+## Structured logging: what to say if asked
+
+The build spec asks for structured logs carrying a request ID. The service uses
+**`pino`** and **`pino-http`**; the command-line tools still use `console.log`.
+That split is the decision, and it is **Q31** in `DECISIONS.md`.
+
+**Why the split.** Structured logging is not "JSON everywhere". It is JSON for
+output a machine filters and text for output a person reads. The service writes
+to Render's log stream, where the only way to find one failed transfer among
+thousands of lines is to query a field. The reconciliation report is read by an
+operator at a terminal, and an aligned table of balances is the readable form —
+JSON would make the one audience it has worse off.
+
+**Why this reverses an earlier decision, and why that is a good sign.** Q5
+decided against a logging library: the standard for this project is the earlier
+backend, which uses `console`, and the person defending the code should not have
+to defend a dependency he did not choose. Q5 also recorded the limitation
+honestly, said the reversal would be cheap, and said why. It was: nine call
+sites, every one already written as `("event_name", { fields })`, which is pino's
+signature with the arguments the other way round. **If asked about Q5, the answer
+is not that it was wrong — it is that the log named its own cost and the cost
+came due.**
+
+**The three details that are deliberate**, each worth a sentence:
+
+1. **`genReqId` reuses the existing ID.** `attachRequestId` generated it and put
+   it in `X-Request-Id` before the logger runs. Left to itself, pino-http makes
+   its own, and the request line and the error line carry two unrelated IDs —
+   which looks fine until somebody tries to use one to trace a failure.
+2. **The `Authorization` header never reaches the log.** pino-http logs the full
+   header set by default. A bearer token is valid until it expires, and a log
+   aggregator is readable by far more people than the database is. There are two
+   independent defences — the serializer drops headers, `redact` censors the
+   value — and they are tested separately, so removing one breaks a test.
+3. **`/health` is not logged.** Render calls `/health/ready` every few seconds
+   forever; those lines would bury the requests somebody cares about.
+
+**Pretty vs JSON is decided by `process.stdout.isTTY`,** not `NODE_ENV`. A
+terminal gets colour, a pipe gets JSON. So Render and the test runner both get
+JSON with nothing configured, and pino-pretty's worker thread stays out of the
+test process.
+
+**Why there is no wrapper.** `logger.ts` holds configuration only. Call sites use
+pino's own methods. A wrapper is the abstraction this project keeps refusing, and
+it would mean learning a second API to defend the first.
+
+**What `tests/logger.test.ts` proves** (9 tests, no database, milliseconds): one
+JSON object per request with method, URL, status and duration; the logged ID
+equals the one in the `X-Request-Id` response header; a 4xx logs at `warn` and a
+5xx at `error`; a bearer token does not appear in the output; `redact` censors an
+`authorization` field directly, independent of the serializer; `/health` produces
+no line; and an `Error` serialises to type, message and stack rather than the
+`{}` that `JSON.stringify` gives for one.

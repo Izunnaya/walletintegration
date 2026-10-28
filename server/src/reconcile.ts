@@ -9,6 +9,11 @@ import "dotenv/config";
 // What it cannot prove is that no transfer ran twice. A duplicated transfer balances
 // perfectly - two transfers, four entries, every sum correct. Idempotency prevents that, and
 // this command does not check it.
+//
+// The output stays console.log rather than going through pino, deliberately. The service
+// logs JSON because a log aggregator has to filter it; this is a report an operator reads at
+// a terminal, and an aligned table of balances is the readable form. Wrapping it in JSON
+// would make the one audience it has worse off. The same applies to seed and admin:password.
 
 const run = async () => {
   const { prisma, databaseSchema } = await import("./models/db.ts");

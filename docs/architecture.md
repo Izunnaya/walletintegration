@@ -25,39 +25,62 @@ A request travels in one direction: `index.ts` → middleware → router →
 controller → model. Nothing travels back up. A model never imports a controller,
 and nothing below `routes/` knows that HTTP exists except the controllers.
 
-### `index.ts` — setup and start
+### `app.ts` — the middleware stack, and `index.ts` — start
+
+`app.ts` builds the app and exports it without listening. `index.ts` loads the
+environment, proves the database is reachable, and then listens. They are split
+for one reason: the integration tests need an app to send requests to, and an
+`index.ts` that listened on import would bind a port in every test file.
 
 ```ts
-dotenv.config();
-
 const app = express();
-const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
+app.set("trust proxy", 1);
+
+app.use(corsMiddleware);
 app.use(attachRequestId);
+app.use(httpLogger);
+app.use(express.json());
 
 app.use("/health", HealthRoute);
+app.use("/auth", AuthRoute);
+app.use("/wallets", WalletRoute);
+app.use("/admin", AdminRoute);
+app.use("/transfers", TransferRoute);
 
 app.use(respondNotFound);
 app.use(respondInternalError);
-
-app.listen(PORT, () => {
-  console.log(`Server started on localhost:${PORT}`);
-});
 ```
 
 **The order is the behaviour**, not a style choice:
 
-- `express.json()` first, so a body exists to validate.
-- `attachRequestId` before the routes, so every handler and every error response
-  has an ID.
+- `trust proxy` set to `1`, not `true`. Render puts one proxy in front, so without
+  this `req.ip` is the proxy on every request and the IP-keyed auth limiter locks
+  everyone out together. `true` would trust the whole chain and let a caller spoof
+  `X-Forwarded-For` for a fresh bucket per request.
+- `corsMiddleware` first, because a preflight `OPTIONS` carries no token and no
+  body and has to be answered before anything would refuse it.
+- `attachRequestId` **before** `express.json()`. A body that is not valid JSON
+  fails inside the parser; with the ID assigned after it, that would be the one
+  error a caller cannot quote an ID for — exactly when they most need one. This
+  was the other way round once, and malformed JSON returned a 500 with no ID.
+- `httpLogger` after the ID, so the automatic request line carries the same ID the
+  caller got in `X-Request-Id`, and before the routes, so a request is logged even
+  when it fails in the parser.
+- `express.json()` before the routers, so a body exists to validate.
 - Routers next.
 - `respondNotFound` after the routers, because it only runs when nothing matched.
 - `respondInternalError` last, because Express only routes errors to a middleware
   registered after everything else.
 
-When the database arrives, `index.ts` gains one more responsibility: connect the
-pool, then listen. Nothing else moves.
+### `logger.ts` — configuration, not an abstraction
+
+One `pino` instance, because `pino-http` attaches it to the request and the error
+handler and the transfer service write to the same one. Callers use pino's own
+methods; there is no wrapper. JSON when stdout is a pipe, pretty when it is a
+terminal, the `Authorization` header redacted, and `/health` left unlogged.
+`console.log` stays in the command-line tools, whose output a person reads. See
+**Q31**.
 
 ### `routes/` — wiring only
 

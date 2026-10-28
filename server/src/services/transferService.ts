@@ -2,6 +2,7 @@ import { randomUUID, randomInt } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { Prisma } from "../generated/prisma/client.ts";
 import { prisma } from "../models/db.ts";
+import { logger } from "../logger.ts";
 import { lockTransferParties } from "../models/transferLocks.ts";
 import { classifyTransactionError } from "../models/transactionErrors.ts";
 import { checkTransferPolicy, fingerprintTransfer } from "../domain/transferPolicy.ts";
@@ -128,7 +129,7 @@ export async function createTransfer(userId: bigint, key: string, request: Trans
         continue;
       }
       if (kind === "retry" || kind === "unavailable") {
-        console.error("transfer_unavailable", { requestId, error });
+        logger.error({ requestId, err: error }, "transfer_unavailable");
         return rejection(503, "TRANSFER_UNAVAILABLE", "The transfer outcome could not be confirmed. Retry with the same Idempotency-Key.", requestId);
       }
       throw error;
