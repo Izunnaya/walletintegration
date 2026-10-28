@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowRight, Check, Copy } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button, buttonVariants } from "@/components/ui/button";
 import PageHeading from "@/components/PageHeading";
@@ -20,11 +20,13 @@ const CreateAccountPage = () => {
   const onSubmit = async (data: CreateAccountFormData) => {
     setMessage("");
     try {
-      setCreated(await create(data));
-      toast.success("Account created");
+      const account = await create(data);
+      setCreated(account);
+      notify.success(`${account.name} now has a wallet`, account.id);
     } catch (caught) {
-      // A refusal here is usually the email already being registered or blacklisted, which
-      // is information the admin needs rather than a toast that disappears.
+      // Kept on the page rather than only in a toast. A refusal here is usually the email
+      // already being registered or blacklisted, which the admin has to act on, and a
+      // notification that disappears after four seconds is the wrong place for it.
       setMessage(
         caught instanceof ApiError ? caught.message : "That account could not be created.",
       );
@@ -34,9 +36,9 @@ const CreateAccountPage = () => {
   const copyWalletId = async (walletId: string) => {
     try {
       await navigator.clipboard.writeText(walletId);
-      toast.success("Wallet ID copied");
+      notify.success("Wallet ID copied");
     } catch {
-      toast.error("Could not copy. Please select the wallet ID manually.");
+      notify.error(null, "Could not copy. Please select the wallet ID manually.");
     }
   };
 

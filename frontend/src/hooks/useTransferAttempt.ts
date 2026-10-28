@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { useSendTransfer } from "@/api/TransferApi";
 import { ApiError } from "@/api/types";
 import type { Transfer, TransferErrorCode } from "@/api/types";
-import { toMinor } from "@/lib/money";
+import { money, toMinor } from "@/lib/money";
 
 // The Idempotency-Key's lifecycle, which is the only genuinely subtle thing in this UI.
 //
@@ -100,7 +100,12 @@ export const useTransferAttempt = () => {
       setAttempt(null);
       setUnconfirmed(false);
       setErrorCode(undefined);
-      toast.success("Transfer completed");
+      // The amount and the recipient, not just "Transfer completed". This is the one
+      // notification in the application that confirms money moved, so it says how much.
+      notify.success(
+        `${money(transfer.amountMinor)} sent`,
+        `To ${transfer.counterpartyName} · reference ${transfer.reference}`,
+      );
     } catch (error) {
       const apiError = error instanceof ApiError ? error : null;
       setMessage(apiError?.message ?? "Something went wrong. Try again.");
@@ -121,6 +126,14 @@ export const useTransferAttempt = () => {
       if (apiError?.code === "TRANSFER_UNAVAILABLE") {
         // The key is kept on purpose. This is the case the whole design exists for.
         setUnconfirmed(true);
+        // The one failure that is also notified even though the dialog is showing it. The
+        // user may close the dialog, and "we cannot tell you whether your money moved" is
+        // not something to leave only in a panel they can dismiss. Deliberately a warning:
+        // calling it an error would claim it failed, and it may well have succeeded.
+        notify.warning(
+          "That transfer could not be confirmed",
+          "Nothing has been sent twice. Check the status to find out what happened.",
+        );
         return;
       }
       if (apiError?.code === "IDEMPOTENCY_KEY_CONFLICT") {
