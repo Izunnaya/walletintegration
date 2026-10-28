@@ -490,7 +490,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (pm.response.code === 200) pm.collectionVariables.set('sourceWalletId', pm.response.json().id);"
+                  "if (pm.response.code === 200) pm.collectionVariables.set('sourceWalletId', pm.response.json().publicId ?? pm.response.json().id);"
                 ]
               }
             }
@@ -524,7 +524,7 @@
               "script": {
                 "type": "text/javascript",
                 "exec": [
-                  "if (pm.response.code === 200) pm.collectionVariables.set('destinationWalletId', pm.response.json().id);"
+                  "if (pm.response.code === 200) pm.collectionVariables.set('destinationWalletId', pm.response.json().publicId ?? pm.response.json().id);"
                 ]
               }
             }

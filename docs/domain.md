@@ -61,6 +61,10 @@ Schema validation does not replace the locks or the business decisions.
 Each user has exactly one NGN wallet, created with the user, starting at zero. There is no
 account deletion.
 
+A wallet has two identifiers. The numeric primary key is what every ledger and transfer row
+references. The public id, `wlt_` followed by 32 hex characters, is what a screen displays and
+a user copies. Transfers accept either. See [ADR 21](decisions.md).
+
 A user can be stopped two ways. Both stop them sending and receiving:
 
 - **Blocked.** Set by an admin, reversible by an admin.

@@ -116,8 +116,11 @@ The caller's own wallet. There is no endpoint for anyone else's. The wallet is f
 token's user id, never from a parameter.
 
 ```json
-{ "id": 7, "currency": "NGN", "balanceMinor": "150000" }
+{ "id": "7", "publicId": "wlt_9f2a4c1d8e3b47a6905c2d7f1b6e8a40", "currency": "NGN", "balanceMinor": "150000" }
 ```
+
+`publicId` is a persisted `wlt_` prefix followed by 32 lowercase hex characters. Use it for
+displaying and copying a wallet. `id` remains a decimal string for compatibility.
 
 ### POST /transfers
 
@@ -135,9 +138,13 @@ Requires an `Idempotency-Key` header.
 The sender comes from the token. `sourceWalletId` is checked for ownership under lock and never
 grants it. A wallet id in a body is a claim, not an authorization.
 
-Wallet ids are positive decimal strings within PostgreSQL `BIGINT` range. Numeric ids are
-rejected. `amountMinor` is a string of kobo. Currency must be `NGN`. Surrounding whitespace and
-leading zeros normalize before the fingerprint is calculated.
+`sourceWalletId` and `destinationWalletId` accept either a public id or a positive decimal
+string within PostgreSQL `BIGINT` range. JSON numbers are rejected. A public id resolves to the
+internal key before the fingerprint is calculated, so the same key sent with either
+representation replays the same transfer rather than sending a second one.
+
+`amountMinor` is a string of kobo. Currency must be `NGN`. Surrounding whitespace and leading
+zeros normalize before the fingerprint is calculated.
 
 `201`:
 
@@ -148,6 +155,8 @@ leading zeros normalize before the fingerprint is calculated.
     "reference": "a61ea75c-9580-43b0-a106-6c550e17c209",
     "sourceWalletId": "7",
     "destinationWalletId": "12",
+    "sourceWalletPublicId": "wlt_9f2a4c1d8e3b47a6905c2d7f1b6e8a40",
+    "destinationWalletPublicId": "wlt_1b7d3e6a0c9f42b8871e5a2d4c6f8b03",
     "amountMinor": "150000",
     "currency": "NGN",
     "createdAt": "2026-10-28T00:00:00.000Z"
@@ -178,6 +187,10 @@ response was lost.
 A replay returns the saved status and body, including the original timestamp and reference. The
 `X-Request-Id` header identifies the current HTTP request, not the original. JSONB does not
 preserve key order, so byte-identical bodies are not guaranteed.
+
+A response saved before public ids existed is replayed unchanged, so it will not carry the
+public id fields. The migration and the backend have to be deployed before a client can rely
+on them.
 
 Changed details with the same key return `409 IDEMPOTENCY_KEY_REUSED`.
 

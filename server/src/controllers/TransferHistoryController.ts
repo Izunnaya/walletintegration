@@ -9,6 +9,8 @@ import { databaseIdSchema } from "../domain/transferRequest.ts";
 // wallet ids rather than from anything in the request, so there is no id to tamper with.
 
 type TransferRow = {
+  sourceWallet: { publicId: string };
+  destinationWallet: { publicId: string };
   id: bigint;
   reference: string;
   sourceWalletId: bigint;
@@ -27,6 +29,8 @@ function present(transfer: TransferRow, ownWalletIds: bigint[]) {
     // Ids and money are strings on the wire: both are BIGINT, and a JSON number is a double.
     sourceWalletId: transfer.sourceWalletId.toString(),
     destinationWalletId: transfer.destinationWalletId.toString(),
+    sourceWalletPublicId: transfer.sourceWallet.publicId,
+    destinationWalletPublicId: transfer.destinationWallet.publicId,
     amountMinor: transfer.amountMinor.toString(),
     currency: transfer.currency,
     // Which way the money went for this caller. A transfer between two wallets they own
@@ -79,6 +83,8 @@ const listTransfers = async (
     select: {
       id: true,
       reference: true,
+      sourceWallet: { select: { publicId: true } },
+      destinationWallet: { select: { publicId: true } },
       sourceWalletId: true,
       destinationWalletId: true,
       amountMinor: true,
@@ -128,6 +134,8 @@ const getTransfer = async (req: Request, res: Response) => {
     select: {
       id: true,
       reference: true,
+      sourceWallet: { select: { publicId: true } },
+      destinationWallet: { select: { publicId: true } },
       sourceWalletId: true,
       destinationWalletId: true,
       amountMinor: true,

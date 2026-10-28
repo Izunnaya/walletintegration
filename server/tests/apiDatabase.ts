@@ -1,6 +1,6 @@
 import "dotenv/config";
 import { randomUUID } from "node:crypto";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { Pool } from "pg";
 import { createDatabaseClient } from "../src/models/databaseClient.ts";
 
@@ -37,10 +37,9 @@ const pool = new Pool({
 let created = false;
 
 export async function prepareApiDatabase() {
-  const migration = await readFile(
-    new URL("../prisma/migrations/0_init/migration.sql", import.meta.url),
-    "utf8",
-  );
+  const migrationsDirectory = new URL("../prisma/migrations/", import.meta.url);
+  const migrations = (await readdir(migrationsDirectory, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory()).map((entry) => entry.name).sort();
 
   const client = await pool.connect();
   try {
@@ -49,7 +48,12 @@ export async function prepareApiDatabase() {
     await client.query("BEGIN");
     await client.query(`CREATE SCHEMA "${apiSchema}"`);
     await client.query(`SET LOCAL search_path TO "${apiSchema}"`);
-    await client.query(migration);
+    for (const migration of migrations) {
+      const sql = await readFile(new URL(`${migration}/migration.sql`, migrationsDirectory), "utf8");
+      // The test owns the transaction. A migration COMMIT would reset SET LOCAL and
+      // send the next migration to the connection's default schema.
+      await client.query(sql.replace(/^(?:BEGIN|COMMIT);\s*$/gm, ""));
+    }
     await client.query("COMMIT");
     created = true;
   } catch (error) {

@@ -165,9 +165,10 @@
 .status-badge[data-status='Active'], .status-badge[data-status='Completed'] { color: var(--success); background: color-mix(in srgb, var(--success) 6%, var(--background)); border-color: color-mix(in srgb, var(--success) 15%, var(--border)); }
 .status-badge[data-status='Failed'], .status-badge[data-status='Blacklisted'], .status-badge[data-status='Blocked'] { color: var(--destructive); background: color-mix(in srgb, var(--destructive) 5%, var(--background)); border-color: color-mix(in srgb, var(--destructive) 15%, var(--border)); }
 .status-badge[data-status='Pending'] { color: #a47620; background: color-mix(in srgb, #a47620 6%, var(--background)); border-color: color-mix(in srgb, #a47620 15%, var(--border)); }
-.page-enter { animation: appear 260ms ease-out; }
-@keyframes appear { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-@media (prefers-reduced-motion: reduce) { .page-enter { animation: none; } *, *::before, *::after { transition-duration: 0.01ms !important; } }
+
+/* framer-motion handles its own animations via MotionConfig reducedMotion="user"; this
+   covers the plain CSS transitions it does not know about. */
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; } }
 button { cursor: pointer; }
 button:disabled { cursor: not-allowed; }
 @layer base {

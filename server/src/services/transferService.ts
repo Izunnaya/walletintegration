@@ -35,6 +35,17 @@ async function executeTransfer(
   const caller = await client.user.findUnique({ where: { id: userId }, select: { id: true } });
   if (!caller) return rejection(401, "UNAUTHENTICATED", "The account no longer exists.", requestId);
 
+  // Resolve public aliases before hashing, so old numeric requests and new public IDs
+  // have identical idempotency semantics. These IDs never change after creation.
+  const publicIds = [request.sourceWalletId, request.destinationWalletId]
+    .filter((id): id is string => typeof id === "string");
+  if (publicIds.length > 0) {
+    const matches = await client.wallet.findMany({
+      where: { publicId: { in: publicIds } }, select: { id: true, publicId: true },
+    });
+    const resolve = (id: bigint | string) => matches.find((wallet) => wallet.publicId === id)?.id ?? id;
+    request = { ...request, sourceWalletId: resolve(request.sourceWalletId), destinationWalletId: resolve(request.destinationWalletId) };
+  }
   const fingerprint = fingerprintTransfer(request);
   const identity = { userId, operation: OPERATION, idempotencyKey: key };
   // This provisional rejection is uncommitted and always replaced before a successful commit.
@@ -63,7 +74,7 @@ async function executeTransfer(
     return result;
   }
 
-  const { users, wallets } = await lockTransferParties(client, [request.sourceWalletId, request.destinationWalletId]);
+  const { users, wallets } = await lockTransferParties(client, [request.sourceWalletId, request.destinationWalletId].filter((id): id is bigint => typeof id === "bigint"));
   const source = wallets.find((wallet) => wallet.id === request.sourceWalletId);
   const destination = wallets.find((wallet) => wallet.id === request.destinationWalletId);
   if (!source) return saveRejection(404, "WALLET_NOT_FOUND", "The source wallet does not exist.");
@@ -88,7 +99,7 @@ async function executeTransfer(
   }
 
   const transfer = await client.transfer.create({
-    data: { ...request, reference: randomUUID() },
+    data: { ...request, sourceWalletId: source.id, destinationWalletId: destination.id, reference: randomUUID() },
   });
   await client.wallet.update({
     where: { id: source.id }, data: { balanceMinor: { decrement: request.amountMinor }, updatedAt: new Date() },
@@ -104,6 +115,7 @@ async function executeTransfer(
     transfer: {
       id: transfer.id.toString(), reference: transfer.reference,
       sourceWalletId: source.id.toString(), destinationWalletId: destination.id.toString(),
+      sourceWalletPublicId: source.publicId, destinationWalletPublicId: destination.publicId,
       amountMinor: transfer.amountMinor.toString(), currency: transfer.currency, createdAt: transfer.createdAt.toISOString(),
     },
   };
