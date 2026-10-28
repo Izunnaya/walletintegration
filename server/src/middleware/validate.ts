@@ -3,6 +3,7 @@ import type { ZodType } from "zod";
 import { describeIssues, transferRequestSchema, idempotencyKeySchema } from "../domain/transferRequest.ts";
 import { loginRequestSchema, registerRequestSchema } from "../domain/authRequest.ts";
 import { transferHistoryQuerySchema } from "../domain/transferHistoryQuery.ts";
+import { restrictionRequestSchema } from "../domain/restrictionRequest.ts";
 
 // Where a malformed request is refused, before any financial work starts.
 //
@@ -70,3 +71,5 @@ export const validateQuery = (schema: ZodType) => (req: Request, res: Response, 
 };
 
 export const validateTransferHistoryQuery = validateQuery(transferHistoryQuerySchema);
+
+export const validateRestrictionRequest = validateBody(restrictionRequestSchema);
