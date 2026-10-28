@@ -1,240 +1,238 @@
 # Wallet Service
 
-An internal wallet service: users, one NGN wallet each, and transfers between
-them that cannot duplicate, lose or invent money — under concurrent requests,
-retries and failures.
+An internal NGN wallet service. Users hold one wallet each and transfer between them.
+Transfers cannot duplicate, lose or invent money under concurrent requests, retries or
+failures.
 
-Closed system. No banks, no payment providers, no queues. Every transfer
-completes inside one PostgreSQL transaction, which is why there is nothing to
-wait on and no event system.
+Closed system. No banks, no payment providers, no queues. Every transfer completes inside one
+PostgreSQL transaction.
 
-**Live:** https://walletintegration-6t6r.onrender.com
+**Live API:** https://walletintegration-6t6r.onrender.com
 
-## The invariants
+## Invariants
 
-Everything else in this repository exists to keep these. When a design choice
-looks over-careful, the question to ask is which one it protects.
+The design exists to hold these.
 
 1. Customer wallet balances never go negative.
-2. A successful transfer debits and credits exactly the same amount in the same
-   currency.
-3. The transfer, both ledger entries, both balance updates and the idempotency
-   result commit together or not at all.
-4. Retrying the same operation cannot move money twice.
-5. A user can only transfer from a wallet they own.
-6. Users can only view wallets and transfers they are authorised to see.
-7. Account restrictions are checked under database locks, inside the transfer
-   transaction.
+2. A successful transfer debits and credits the same amount in the same currency.
+3. The transfer, both ledger entries, both balance updates and the idempotency result commit
+   together or not at all.
+4. Retrying an operation cannot move money twice.
+5. A user can transfer only from a wallet they own.
+6. A user can read only wallets and transfers they are party to.
+7. Account restrictions are checked under row locks, inside the transfer transaction.
 8. Every balance change has matching immutable ledger entries.
-9. Financial records are never deleted or rewritten. Corrections are new
-   compensating entries.
+9. Financial records are never deleted or rewritten. Corrections are new compensating entries.
 10. A timeout does not mean a transfer failed.
 
-**The core transfer is implemented.** The PostgreSQL integration suite exercises
-atomicity, idempotency and concurrent requests; this is not a load-test or deployed
-availability guarantee.
+Invariant 9 is enforced by convention, not by the database. See
+[known limitations](docs/known-limitations.md).
 
-## Where it stands
+## Quick start
 
-Implemented: liveness/readiness, registration, login, JWT authentication, the
-caller's wallet, and `POST /transfers`. Prisma owns the seven-table data model and
-migrations; Zod validates requests. Transfers claim an idempotency key, lock users
-and wallets, check restrictions, and commit the debit, credit, ledger pair and
-stored response together.
-
-Transfer history, audited admin block/unblock, rate limits, structured logging and
-the reconciliation command are also implemented. The API is deployed on Render.
-The [production audit](docs/production-audit-2026-10-28.md) records verified behavior,
-security fixes awaiting deployment, and the remaining proxy configuration check.
-[WALKTHROUGH.md](WALKTHROUGH.md) explains the request flow and
-[DECISIONS.md](DECISIONS.md) records the tradeoffs.
-
-Run commands from `server/`. Auth and transfer HTTP tests create disposable schemas
-using DATABASE_URL and remove them afterward. Older schema/seed tests run inside
-rollback transactions in the configured application's schema. Do not point test
-commands at a production database. Mocked retry tests prove only retry decisions;
-real PostgreSQL tests exercise locking and financial writes.
-
-## Running it locally
-
-Needs Node 22.18 or newer, within the 22.x line. Everything runs from `server/`.
+Requires Node 22.18 or newer, within the 22.x line. Run everything from `server/`.
 
 ```sh
 cd server
 npm ci
 cp .env.example .env     # PowerShell: Copy-Item .env.example .env
+npm run migrate
+npm run seed
 npm run dev              # http://localhost:3000
 ```
 
-| Command | What it does |
-| --- | --- |
-| `npm run dev` | Runs `src/index.ts` with `--watch` |
-| `npm run typecheck` | `tsc --noEmit` |
-| `npm run build` | Compiles `src/` to `dist/` |
-| `npm start` | Runs the compiled server |
-| `npm test` | Runs all Vitest suites; the database suites need `DATABASE_URL` |
-| `npm run test:unit` | Runs only the tests that need no database |
-| `npm run migrate` | Applies Prisma migrations |
-| `npm run seed` | Seeds demo wallets through Prisma |
-| `npm run test:integration` | Runs schema, seed, auth and transfer PostgreSQL tests |
+Confirm it answers:
 
 ```sh
 curl -i http://localhost:3000/health/live
 ```
 
-returns `200` with `{"status":"ok"}` and an `X-Request-Id` header. It proves the
-process answers and nothing more — readiness is a separate endpoint, deliberately,
-so a database outage is never reported as a dead process.
+Returns `200`, `{"status":"ok"}` and an `X-Request-Id` header. Liveness does not touch the
+database. Readiness is separate, so a database outage is not reported as a dead process.
 
-A port already in use produces a startup error; stop the other server or set a
-different `PORT`.
+### Commands
+
+| Command | Does |
+| --- | --- |
+| `npm run dev` | Runs `src/index.ts` with `--watch` |
+| `npm run typecheck` | `tsc --noEmit` |
+| `npm run build` | Compiles `src/` to `dist/` |
+| `npm start` | Runs the compiled server |
+| `npm test` | Every suite. Database suites need `DATABASE_URL`. Takes about 15 minutes |
+| `npm run test:unit` | Suites that need no database |
+| `npm run test:integration` | PostgreSQL suites only |
+| `npm run migrate` | Applies Prisma migrations |
+| `npm run seed` | Seeds demo wallets. Repeatable |
+| `npm run reconcile` | Audits the ledger against the balances |
+| `npm run admin:password` | Sets or rotates the admin password |
+
+## API
+
+Full reference in [docs/api.md](docs/api.md).
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/health/live` | The process answers |
+| `GET` | `/health/ready` | The database is reachable |
+| `POST` | `/auth/register` | Create a user and their wallet |
+| `POST` | `/auth/login` | Exchange credentials for a JWT |
+| `GET` | `/wallets/me` | The caller's wallet and balance |
+| `POST` | `/transfers` | Move money. Requires an `Idempotency-Key` header |
+| `GET` | `/transfers` | The caller's transfers, keyset paginated |
+| `GET` | `/transfers/:id` | One transfer the caller is party to |
+| `POST` | `/admin/users/:id/block` | Block an account. Requires a reason |
+| `POST` | `/admin/users/:id/unblock` | Lift a block. Requires a reason |
+| `GET` | `/admin/audit` | The admin action trail |
+
+Two conventions apply to every call.
+
+Money is a string of minor units. `"150000"` is NGN 1,500.00. A JSON number is a float and
+loses precision at scale. Parse the string. Never do arithmetic on a formatted value.
+
+Every response carries `X-Request-Id`, and every error repeats it as `error.requestId`. Quote
+it when reporting a failure.
+
+A `503` on a transfer means the outcome is unconfirmed, not that it failed. Retry with the
+same `Idempotency-Key`.
+
+**Postman:** import
+[docs/wallet-service.postman_collection.json](docs/wallet-service.postman_collection.json).
+Run a Login request first. It stores the token in a `{{token}}` collection variable.
 
 ## Demo credentials
 
-Created by `npm run seed`. Local fixtures, published here deliberately so a reviewer can
-sign in without being sent anything.
+Created by `npm run seed`. Local fixtures, published so a reviewer can sign in without being
+sent anything.
 
-| Account | Password | Holds | Use it for |
+| Account | Password | Holds | Use for |
 | --- | --- | --- | --- |
 | `ada@example.com` | `demo-password-2026` | NGN 500,000 | The funded sender |
 | `bode@example.com` | `demo-password-2026` | NGN 250,000 | The recipient |
 | `chidi@example.com` | `demo-password-2026` | NGN 10 | Insufficient funds |
-| `admin@wallet.internal` | **not published** | NGN 0 | Admin-only endpoints |
-| `fraudster@example.com` | no account | — | Blacklisted; registration refuses it |
+| `admin@wallet.internal` | not published | NGN 0 | Admin endpoints |
+| `fraudster@example.com` | no account | | Blacklisted. Registration refuses it |
 
-`system@wallet.internal` owns the funding wallet and **cannot be signed into at all**. The
-seed gives it a hash of random bytes nobody holds the input to, so the one wallet allowed to
-go negative has no usable login.
+The customer passwords reset on every seed run, so the database always matches this table.
+Nothing of value is behind them.
 
-The three customer passwords are reset on every seed run, so the database always matches
-this table. Nothing of value is protected by them.
+`system@wallet.internal` owns the funding wallet and cannot be signed into. Its password hash
+comes from random bytes nobody holds, so the one wallet allowed to go negative has no usable
+login.
 
-**The admin password is deliberately not in this file.** It is a real credential: it grants
-the ability to block and unblock any account, so publishing it here would hand that to
-anyone who reads the repository. It comes from `SEED_ADMIN_PASSWORD` and is shared with
-reviewers privately.
-
-The seed writes it once and never resets it, because a deployed credential should not change
-because somebody ran the seed again. To set or rotate it deliberately:
+The admin password is not in this repository. It grants block and unblock on any account. Set
+it from `SEED_ADMIN_PASSWORD`:
 
 ```sh
 SEED_ADMIN_PASSWORD='...' npm run admin:password
 ```
 
-That command refuses an unset, short or over-long value, refuses to touch a non-admin row,
-and verifies the new password by reading it back rather than trusting the write.
+The seed writes it once and never resets it. See [ADR 18](docs/decisions.md).
 
-An earlier version of this README did publish an admin password, and the deployed database
-was seeded with it. It has been rotated. The lesson is recorded rather than quietly fixed:
-a credential in a public file is a working credential, not a placeholder.
+## How it works
 
-**Postman:** import [docs/wallet-service.postman_collection.json](docs/wallet-service.postman_collection.json).
-Run any Login request first; it stores the token in a `{{token}}` collection variable that
-every protected request then uses.
+```
+request -> middleware -> route -> controller -> service -> model -> PostgreSQL
+```
+
+Nothing travels back up. A model never imports a controller. Nothing below `routes/` knows
+HTTP exists except the controllers. [docs/architecture.md](docs/architecture.md) covers each
+layer and the middleware order.
+
+The transfer is the part to read first. It claims an idempotency key, locks the user rows then
+the wallet rows in sorted id order, checks restrictions, and commits the debit, credit, both
+ledger entries and the stored response together.
+[docs/domain.md](docs/domain.md) covers the money rules and the difference between a known and
+an unknown failure.
+
+## Testing
+
+```sh
+cd server
+npm test
+```
+
+21 suites. Unit tests cover money arithmetic, request validation, the fingerprint and the
+transfer policy. PostgreSQL suites cover row locking, idempotency under concurrency, fault
+injection mid-transfer, the rate limiters, the HTTP surface and the reconciliation checks.
+
+There is one database. Integration tests isolate themselves with a per-run schema named by
+UUID, or by working inside a transaction that is always rolled back. `fileParallelism` is off
+because some suites `TRUNCATE`, which locks out every other transaction on those tables.
+
+Never point the test commands at a deployed database.
+
+[docs/known-limitations.md](docs/known-limitations.md) lists what the suite does not establish.
+
+## Deployment
+
+Live on Render, built from `server/` as the monorepo root. Steps and verification in
+[docs/deployment.md](docs/deployment.md).
+
+- Secrets live in Render environment variables: `DATABASE_URL`, `JWT_SECRET`,
+  `SEED_ADMIN_PASSWORD`.
+- Migrations run during the deploy. The seed is run manually, once.
+- The health check points at `/health/ready`, so a process that cannot reach the database is
+  not sent traffic.
+- Logs are JSON when stdout is a pipe and pretty-printed in a terminal. `LOG_LEVEL` defaults
+  to `info`: one line per request, carrying the request id.
+- Set `TRUST_PROXY_HOPS` to the number of proxies in front of the service. It defaults to `0`,
+  which trusts no forwarded header. The deployed value is still outstanding; see
+  [known limitations](docs/known-limitations.md).
+- The free plan sleeps when idle. The first request after a pause takes up to a minute.
+
+### Rate limits
+
+Per minute: 60 transfers per caller, 240 reads per caller, 20 auth requests per IP, 10 login
+attempts per account and client, 60 login attempts per account, 30 admin requests per caller.
+
+A `503` on a transfer does not consume the transfer quota. Honor `Retry-After` on `429` and
+`503`. Keep the original `Idempotency-Key` on every retry. Counters are held in one process;
+use a shared store before adding replicas.
 
 ## Repository layout
 
 ```
-├── server/              The API: Express 5 + TypeScript over PostgreSQL
-│   └── src/
-│       ├── index.ts         Loads .env, builds the app, mounts routers, listens
-│       ├── routes/          One router per resource, wiring only
-│       ├── controllers/     One controller per resource, the work
-│       ├── middleware/      Request IDs, the error contract, later auth and validation
-│       └── models/          Prisma client and repeatable seed operations
-├── frontend/            Placeholder; nothing is built there yet
-├── docs/                Architecture, domain and API documentation
-├── DECISIONS.md         Settled questions, with what was ruled out
-├── OPEN-QUESTIONS.md    What is still undecided, and what each question blocks
-├── CONTRIBUTING.md      Branches, commits, conventions, and the checks a change must pass
-└── WALKTHROUGH.md       The implementation explained file by file, for defending it
+server/                 The API: Express 5 and TypeScript over PostgreSQL
+  src/
+    app.ts              Builds the app and its middleware stack
+    index.ts            Loads .env, proves the database is reachable, listens
+    routes/             One router per resource. Wiring only
+    controllers/        One controller per resource. The HTTP work
+    services/           The transfer: locking, idempotency, retries
+    middleware/         Request ids, auth, validation, CORS, limits, errors
+    domain/             Zod schemas and the money rules
+    models/             Prisma client, locking reads, seed, reconciliation
+  prisma/               Schema and migrations
+  tests/                Unit and PostgreSQL integration suites
+frontend/               The wallet UI: React 19 on Vite
+docs/                   Architecture, domain, API, decisions, limitations
+CONTRIBUTING.md         Branches, commits, conventions, required checks
 ```
 
-The API is the contract between `server/` and `frontend/`. The server depends on
-nothing in the frontend folder.
+The API is the contract between `server/` and `frontend/`. The server depends on nothing in
+the frontend folder.
 
 ## Documentation
 
-| Document | Read it for |
+| Document | Read for |
 | --- | --- |
-| [docs/architecture.md](docs/architecture.md) | How the server is put together, what each layer may do, where the transfer will live |
-| [docs/domain.md](docs/domain.md) | What a wallet, transfer and ledger entry are; the rules on money; known versus unknown failures |
-| [docs/api.md](docs/api.md) | Every endpoint: success shapes, the error shape, and which status code means what |
-| [DECISIONS.md](DECISIONS.md) | Every settled decision, with the reasoning, what was ruled out, and whether it can be undone |
-| [OPEN-QUESTIONS.md](OPEN-QUESTIONS.md) | Outstanding deployment decisions, including Q32 proxy attribution |
+| [docs/architecture.md](docs/architecture.md) | How the server is put together and what each layer may do |
+| [docs/domain.md](docs/domain.md) | Wallets, transfers and ledger entries. The money rules |
+| [docs/api.md](docs/api.md) | Every endpoint and every error code |
+| [docs/decisions.md](docs/decisions.md) | The design decisions and what they cost |
+| [docs/known-limitations.md](docs/known-limitations.md) | What the service does not do or does not prove |
+| [docs/deployment.md](docs/deployment.md) | Deploying it and verifying the deploy |
+| [docs/prisma.md](docs/prisma.md) | Read before migrating an existing database |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to make and land a change |
-| [server/README.md](server/README.md) | API detail: commands, environment, structure, and what has actually been verified |
-| [WALKTHROUGH.md](WALKTHROUGH.md) | A file-by-file walk through the implementation, written to be explained out loud |
-
-Scope comes from the build spec and the development guide. Both live outside this
-repository and are excluded by `.gitignore`; where they conflict, the build spec
-wins and the conflict is recorded rather than quietly resolved.
-
-## How decisions are recorded
-
-A question raised while building goes into **OPEN-QUESTIONS.md** with its
-options, what each costs, and what it blocks. When it is answered it moves to
-**DECISIONS.md**, keeping its Q-number, with the reasoning and what was ruled
-out. One is open: **[Q32](OPEN-QUESTIONS.md)**, which is the rate limiter keying
-on Render's proxy instead of the caller. It is open rather than guessed at
-because every available fix needs a number nobody should invent.
-
-The point of keeping the rejected options is that a later reader can tell a
-deliberate trade-off from an oversight. Two of the settled ones went against the
-obvious answer — [Q2](DECISIONS.md), which cost the test suite, and
-[Q5](DECISIONS.md), which went against the build spec's own request for
-structured logs. Both say so, and **both have since been reversed** — [Q31](DECISIONS.md)
-put `pino` back. Q5 predicted that reversal would be cheap and said why; it was
-nine call sites. That is the log earning its keep rather than just recording.
-
-## Deployment
-
-Live on Render, built from `server/` as the root of this monorepo. See
-[docs/deployment.md](docs/deployment.md) for the step-by-step and the checks that
-prove it is up.
-
-- Secrets (`DATABASE_URL`, `JWT_SECRET`, admin credentials) live in Render
-  environment variables, never in the repository.
-- Logs are JSON on Render and pretty-printed in a terminal, decided by whether
-  stdout is a TTY. `LOG_LEVEL` defaults to `info`, which is one line per request
-  carrying the caller's `X-Request-Id`.
-- Migrations run as part of the deploy. The seed is run manually, once.
-- Render's health check points at `/health/ready`.
-- Free web services sleep when idle, so the first request after a pause is slow.
-  That is not a bug and the submission should say so.
-- **A free Render PostgreSQL database becomes inaccessible 30 days after
-  creation**, and the 14-day grace period does not keep it working. That deadline
-  is the reason the database is **Neon** and not Render PostgreSQL, so there is no
-  expiry date to diary. This is **Q21**.
+| [server/README.md](server/README.md) | Commands, environment and structure |
 
 ## Stack
 
-Node 22, Express 5, strict TypeScript, PostgreSQL, and Prisma 7. Zod validates
-external input; dotenv loads local configuration; Vitest runs tests. Prisma uses
-its pg adapter internally. SQL constraints and future explicit row locks remain
-part of the financial design. Q13 supersedes the original pg-only decision.
+Node 22, Express 5, strict TypeScript, PostgreSQL 18, Prisma 7 with its pg adapter. Zod
+validates external input. `pino` writes structured logs. `helmet` sets security headers.
+`express-rate-limit` holds the quotas. Vitest runs the tests. The database is Neon; see
+[ADR 19](docs/decisions.md).
 
-Read [docs/prisma.md](docs/prisma.md) before migrating an existing database.
-Client generation is automatic on install/build; seeding is explicit. Existing
-application data is preserved through verified baselining, never a reset.
-
-
-## Production hardening configuration
-
-Use TRUST_PROXY_HOPS=0 for direct local access. On Render explicitly set the verified
-proxy count using a real request's ingress logs. An unset or blank setting safely defaults to zero and logs a warning on Render;
-proxy configuration does not prevent startup. The known live auth-IP quota issue remains open until configuration and
-post-deploy checks confirm it is fixed.
-
-Limits per minute: 20 auth requests per normalized IP/subnet, 10 login attempts per
-normalized email, 60 transfer requests per authenticated user, 240 shared wallet/
-history reads per user, and 30 admin requests per user. Successful login attempts
-also count toward the account allowance to bound bcrypt work. Quotas are held in
-one process; use a shared store before adding replicas. Honor Retry-After on 429
-and 503. Every transfer retry must retain its original Idempotency-Key.
-
-`npm run audit:production` runs the bounded live audit described in the report;
-`AUDIT_BASE_URL`, `AUDIT_REPORT_PATH`, `AUDIT_FUNDER_EMAIL` and
-`AUDIT_FUNDER_PASSWORD` override its target/report/demo funding credentials.
-The report never contains passwords or bearer tokens. Avoid pointing ordinary
-schema/seed tests at the deployed application's database.
+Read [docs/prisma.md](docs/prisma.md) before migrating an existing database. Client generation
+runs on install and build. Seeding is explicit. Existing data is preserved through verified
+baselining, never a reset.
