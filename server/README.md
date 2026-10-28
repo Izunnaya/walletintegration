@@ -31,7 +31,8 @@ npm run dev              # http://localhost:3000
 
 `npm test`, `npm run typecheck`, and `npm run build` must pass before committing
 completed code changes. There are 50 unit tests, plus PostgreSQL schema and Prisma
-seed integration suites. Concurrent transfer tests remain outstanding; see Q15 in [../OPEN-QUESTIONS.md](../OPEN-QUESTIONS.md).
+seed integration suites. Concurrency is covered by the transfer and stress integration suites; see
+[../docs/known-limitations.md](../docs/known-limitations.md) for what the tests still do not prove.
 
 Node runs the TypeScript directly in development, so there is no transpiler in
 the dependency list. That is also why imports carry the real `.ts` extension and
@@ -83,7 +84,7 @@ rather than only the ones a controller remembered to catch.
 
 Without `respondInternalError`, Express answers a thrown error with an HTML page
 containing the exception message, the stack and absolute filesystem paths. That
-was verified, not assumed; the evidence is in [Q4](../DECISIONS.md).
+was verified, not assumed; the reasoning is in [ADR 13](../docs/decisions.md).
 
 Controllers still catch their own errors. The middleware is the backstop.
 
@@ -91,8 +92,8 @@ Controllers still catch their own errors. The middleware is the backstop.
 
 The HTTP foundation, Prisma models and migration, repeatable seed, shared Prisma client,
 Zod money/request schemas, pure transfer policy, request fingerprint helper, and
-50 unit tests exist. Read [../WALKTHROUGH.md](../WALKTHROUGH.md) for file-by-file
-reasoning and [../DECISIONS.md](../DECISIONS.md) Q23?Q27 for the domain decisions.
+Read [../docs/architecture.md](../docs/architecture.md) for how the layers fit together
+and [../docs/decisions.md](../docs/decisions.md) for the domain decisions and their reasoning.
 
 Readiness, authentication, wallet endpoints, the transfer transaction,
 durable idempotency, admin endpoints, rate limits, reconciliation, and deployment

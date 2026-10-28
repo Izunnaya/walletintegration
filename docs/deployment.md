@@ -92,7 +92,7 @@ satisfy "a live URL we can hit", so that clock would have to be tracked and the 
 before submission.
 
 Neon's free tier does not expire that way, and Render connects to it over the network like any other
-host. That removes the deadline entirely, which is why **Q21 is settled** rather than open.
+host. That removes the deadline entirely — see [ADR 19](decisions.md).
 
 One consequence worth knowing: the pooled Neon endpoint is PgBouncer, which rejects startup
 parameters and shares session state between clients. The application uses the pooled endpoint and
