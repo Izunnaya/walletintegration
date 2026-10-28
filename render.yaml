@@ -21,9 +21,9 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      # Set from the deployed socket/X-Forwarded-For chain; never trust all hops.
+      # Safe bootstrap default; replace with the verified ingress hop count for per-client IP limits.
       - key: TRUST_PROXY_HOPS
-        sync: false
+        value: "0"
       # Render sets PORT itself and the app reads it.
       - key: DATABASE_URL
         sync: false
