@@ -1,7 +1,13 @@
-import { afterAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { Prisma } from "../src/generated/prisma/client.ts";
 import { testPrisma } from "./database.ts";
 import { applySeed } from "../src/models/seedData.ts";
+
+// The seed refuses to run against a non-local database without this, which is the guard
+// working: these tests run against a hosted one.
+beforeAll(() => {
+  process.env.SEED_ADMIN_PASSWORD = "seed-test-admin-password-not-for-production";
+});
 
 afterAll(async () => { await testPrisma.$disconnect(); });
 
@@ -13,7 +19,7 @@ async function inRolledBackTransaction(work: (client: Prisma.TransactionClient) 
         admin_audit_entries, wallets, users, blacklist_entries CASCADE`;
       await work(client);
       throw rollback;
-    }, { timeout: 30000 });
+    }, { maxWait: 20_000, timeout: 120_000 });
   } catch (error) {
     if (error !== rollback) throw error;
   }
@@ -41,7 +47,7 @@ describe("applySeed", () => {
     await expect(testPrisma.$transaction(async (client) => {
       await applySeed(client);
       throw failure;
-    }, { timeout: 30000 })).rejects.toBe(failure);
+    }, { maxWait: 20_000, timeout: 120_000 })).rejects.toBe(failure);
 
     const after = await testPrisma.$transaction([
       testPrisma.user.count(), testPrisma.wallet.count(), testPrisma.transfer.count(),

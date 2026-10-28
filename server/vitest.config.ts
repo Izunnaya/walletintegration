@@ -8,9 +8,11 @@ export default defineConfig({
     // anything real.
     fileParallelism: false,
 
-    // The database is hosted, so every query is a round trip. The unit tests finish in
-    // milliseconds; this headroom is for the ones that talk to Postgres.
-    testTimeout: 30_000,
-    hookTimeout: 30_000,
+    // The database is hosted, so every query is a round trip, and bcrypt at cost 12 adds
+    // a quarter of a second per hash on top. The seed repeatability tests run the whole
+    // seed three times, which is a handful of hashes and a few dozen round trips, so 30
+    // seconds was not enough. The unit tests still finish in milliseconds.
+    testTimeout: 90_000,
+    hookTimeout: 90_000,
   },
 });
