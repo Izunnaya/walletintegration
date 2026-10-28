@@ -1,6 +1,7 @@
 import type { Request, Response } from "express";
 import { prisma } from "../models/db.ts";
 import type { TransferHistoryQuery } from "../domain/transferHistoryQuery.ts";
+import { databaseIdSchema } from "../domain/transferRequest.ts";
 
 // Transfers the caller is a party to. Never anyone else's.
 //
@@ -108,8 +109,8 @@ const getTransfer = async (req: Request, res: Response) => {
   // Express types a route parameter as string | string[], so the shape is checked before the
   // value is. Anything that is not a plain run of digits is answered 404 rather than 400,
   // because a caller guessing at ids should learn nothing from the difference.
-  const requested = req.params.id;
-  if (typeof requested !== "string" || !/^\d+$/.test(requested)) {
+  const requested = databaseIdSchema.safeParse(req.params.id);
+  if (!requested.success) {
     res.status(404).json({
       error: {
         code: "TRANSFER_NOT_FOUND",
@@ -124,7 +125,7 @@ const getTransfer = async (req: Request, res: Response) => {
 
   const transfer = await prisma.transfer.findFirst({
     where: {
-      id: BigInt(requested),
+      id: requested.data,
       OR: [
         { sourceWalletId: { in: walletIds } },
         { destinationWalletId: { in: walletIds } },

@@ -92,7 +92,7 @@ describe("reconciliation on a sound database", () => {
   it("passes every check", async () => {
     const checks = await reconcileWithDamage();
 
-    expect(checks).toHaveLength(6);
+    expect(checks).toHaveLength(7);
     expect(failing(checks)).toEqual([]);
   });
 });

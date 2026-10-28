@@ -10,6 +10,7 @@ vi.mock("../src/models/db.ts", async () => {
 });
 vi.hoisted(() => {
   process.env.JWT_SECRET = "ratelimit-integration-test-secret-not-for-production";
+  process.env.TRUST_PROXY_HOPS = "1";
 });
 import app from "../src/app.ts";
 
@@ -34,7 +35,7 @@ function login(ip: string, body?: unknown) {
   return fetch(`${baseUrl}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Forwarded-For": ip },
-    body: JSON.stringify(body ?? { email: "nobody@example.com", password: "wrong password here" }),
+    body: JSON.stringify(body ?? {}),
   });
 }
 
@@ -74,6 +75,47 @@ afterAll(async () => {
 });
 
 describe("auth rate limit", () => {
+  // This replaces a test that asserted ten failures from ten DIFFERENT addresses locked the
+  // account out from a fresh address. That was the behaviour, and it was a denial of service:
+  // anyone who knew an email address could keep its owner locked out for about ten requests a
+  // minute. The tight limit is per account AND per client now, so these two tests assert the
+  // guessing is still capped and the owner is not collateral.
+  it("caps guessing one account from one client, and normalises the email", async () => {
+    const client = "10.9.0.1";
+
+    for (let attempt = 0; attempt < 10; attempt++) {
+      // Case and surrounding whitespace vary deliberately: these must share one bucket, or
+      // the limit is trivially bypassed by sending "Target@" then "target@".
+      const email = attempt % 2 === 0 ? "  LOCKOUT@example.com " : "lockout@example.com";
+      expect((await login(client, { email, password: "wrong password" })).status).toBe(401);
+    }
+
+    const refused = await login(client, { email: "lockout@example.com", password: "wrong password" });
+    expect(refused.status).toBe(429);
+    expect(Number(refused.headers.get("retry-after"))).toBeGreaterThan(0);
+
+    // The point of the fix. The same account, from somewhere else, is still reachable - so
+    // the real owner can still sign in while somebody guesses at them from one address.
+    expect((await login("10.9.9.9", { email: "lockout@example.com", password: "wrong password" })).status).toBe(401);
+
+    // And a different account from the exhausted client is unaffected.
+    expect((await login(client, { email: "bystander@example.com", password: "wrong password" })).status).toBe(401);
+  });
+
+  it("aggregates IPv6 clients in the same /56 subnet", async () => {
+    for (let attempt = 0; attempt < AUTH_LIMIT; attempt++) {
+      expect((await login(`2001:db8:abcd:1200::${attempt + 1}`)).status).toBe(400);
+    }
+    expect((await login("2001:db8:abcd:12ff::ffff")).status).toBe(429);
+    expect((await login("2001:db8:abcd:1300::1")).status).toBe(400);
+  });
+
+  it("reuses the client bucket when spoofed addresses are prepended before the trusted proxy", async () => {
+    for (let attempt = 0; attempt < AUTH_LIMIT; attempt++) {
+      await login(`198.51.100.${attempt + 1}, 203.0.113.81`);
+    }
+    expect((await login("198.51.100.222, 203.0.113.81")).status).toBe(429);
+  });
   it("allows exactly the limit, then refuses with 429 and a stable error shape", async () => {
     const ip = "10.1.0.1";
     const statuses: number[] = [];

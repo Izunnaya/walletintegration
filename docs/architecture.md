@@ -1,46 +1,45 @@
 # Architecture
 
-How the server is put together, what each layer may do, and where the financial
-code will attach.
-
-The shape is routes, controllers, middleware and models, with `index.ts` setting
-up and starting the app. It is deliberately the layout used in the earlier
-projects here rather than anything novel — see [Q2](../DECISIONS.md) for the one
-place that choice cost something.
-
----
+How the server is put together and what each layer may do.
 
 ## The layers
 
 ```
 server/src/
-  index.ts        loads .env, builds the app, mounts routers, listens
+  app.ts          builds the app and its middleware stack, exports it unlistened
+  index.ts        loads .env, proves the database is reachable, listens
+  logger.ts       the pino instance and the pino-http options
+  proxyConfig.ts  the validated trust-proxy hop count
   routes/         one router per resource. Wiring only
-  controllers/    one controller per resource. The work
-  middleware/     cross-cutting concerns: request IDs, errors, auth, validation
-  models/         the database and the records. Nothing here yet
+  controllers/    one controller per resource. The HTTP work
+  services/       the transfer: transaction boundary, locks, idempotency, retries
+  middleware/     request ids, auth, validation, CORS, rate limits, errors
+  domain/         Zod schemas, money rules, transfer policy, fingerprint
+  models/         Prisma client, locking reads, seed, reconciliation
 ```
 
-A request travels in one direction: `index.ts` → middleware → router →
-controller → model. Nothing travels back up. A model never imports a controller,
-and nothing below `routes/` knows that HTTP exists except the controllers.
+A request travels one way: middleware, router, controller, service, model. Nothing travels
+back up. A model never imports a controller. Nothing below `routes/` knows HTTP exists except
+the controllers.
 
-### `app.ts` — the middleware stack, and `index.ts` — start
+## app.ts and index.ts
 
-`app.ts` builds the app and exports it without listening. `index.ts` loads the
-environment, proves the database is reachable, and then listens. They are split
-for one reason: the integration tests need an app to send requests to, and an
-`index.ts` that listened on import would bind a port in every test file.
+`app.ts` builds the app and exports it without listening. `index.ts` loads the environment,
+proves the database is reachable with `SELECT 1`, then listens.
+
+They are split so integration tests can mount the app without binding a port.
 
 ```ts
 const app = express();
 
-app.set("trust proxy", 1);
-
-app.use(corsMiddleware);
+app.set("trust proxy", trustedProxyHops);
+app.disable("x-powered-by");
+app.use(helmet());
+app.use(noStore);
 app.use(attachRequestId);
+app.use(corsMiddleware);
 app.use(httpLogger);
-app.use(express.json());
+app.use(express.json({ limit: "16kb" }));
 
 app.use("/health", HealthRoute);
 app.use("/auth", AuthRoute);
@@ -52,87 +51,83 @@ app.use(respondNotFound);
 app.use(respondInternalError);
 ```
 
-**The order is the behaviour**, not a style choice:
+The order is behavior, not style:
 
-- `trust proxy` set to `1`, not `true`. Render puts one proxy in front, so without
-  this `req.ip` is the proxy on every request and the IP-keyed auth limiter locks
-  everyone out together. `true` would trust the whole chain and let a caller spoof
-  `X-Forwarded-For` for a fresh bucket per request.
-- `corsMiddleware` first, because a preflight `OPTIONS` carries no token and no
-  body and has to be answered before anything would refuse it.
-- `attachRequestId` **before** `express.json()`. A body that is not valid JSON
-  fails inside the parser; with the ID assigned after it, that would be the one
-  error a caller cannot quote an ID for — exactly when they most need one. This
-  was the other way round once, and malformed JSON returned a 500 with no ID.
-- `httpLogger` after the ID, so the automatic request line carries the same ID the
-  caller got in `X-Request-Id`, and before the routes, so a request is logged even
-  when it fails in the parser.
-- `express.json()` before the routers, so a body exists to validate.
-- Routers next.
+- `trust proxy` comes from `TRUST_PROXY_HOPS`. Express counts hops from the right, so the
+  value must match the deployment. Too low and `req.ip` is the proxy, which buckets every
+  caller together. `true` takes the leftmost entry, which the caller controls. See
+  [known-limitations.md](known-limitations.md).
+- `helmet` and `no-store` run before routing, so they cover `401`, `403`, `429` and unmatched
+  routes too.
+- `attachRequestId` before `express.json()`. A body that is not valid JSON fails inside the
+  parser. With the id assigned after it, that would be the one error a caller cannot quote an
+  id for. It was the other way round once and malformed JSON returned a `500` with no id.
+- `corsMiddleware` before the routers. A preflight `OPTIONS` carries no token and no body, so
+  it has to be answered before anything would refuse it. It sits after the request id so a
+  preflight response carries one.
+- `httpLogger` after the id, so the request line carries the same id the caller received, and
+  before the routers, so a request is logged even when it fails in the parser.
+- `express.json()` before the routers, so a body exists to validate. The 16 KB cap is well
+  above the largest legitimate request.
 - `respondNotFound` after the routers, because it only runs when nothing matched.
-- `respondInternalError` last, because Express only routes errors to a middleware
-  registered after everything else.
+- `respondInternalError` last, because Express only routes errors to a handler registered
+  after everything else.
 
-### `logger.ts` — configuration, not an abstraction
+## routes/
 
-One `pino` instance, because `pino-http` attaches it to the request and the error
-handler and the transfer service write to the same one. Callers use pino's own
-methods; there is no wrapper. JSON when stdout is a pipe, pretty when it is a
-terminal, the `Authorization` header redacted, and `/health` left unlogged.
-`console.log` stays in the command-line tools, whose output a person reads. See
-**Q31**.
-
-### `routes/` — wiring only
-
-A route file names a path, lists the middleware it needs, and points at a
-controller function. It holds no logic, no queries and no response building.
+A route file names a path, lists its middleware and points at a controller function. No logic,
+no queries, no response building.
 
 ```ts
-const router = express.Router();
-
-router.get("/live", HealthController.getLiveness);
-
-export default router;
+router.post("/", verifyToken, transferLimiter, validateIdempotencyKey,
+  validateTransferRequest, TransferController.sendTransfer);
 ```
 
-Mounted under a prefix in `index.ts`, so `HealthRoute`'s `/live` answers on
-`/health/live`.
-
-**Middleware order inside a route is fixed**: authenticate, authorise, validate,
+Middleware order inside a route is fixed: authenticate, rate limit, authorize, validate,
 controller.
 
-```ts
-router.post("/", verifyToken, validateTransferRequest, TransferController.createTransfer);
-```
+The rate limit sits before the authorization query so an unauthorized caller cannot make the
+service do database work by repeating a request it will refuse.
 
-That order is the security property. Authenticating after validating would spend
-work on an unauthenticated request; validating after the controller would be too
-late.
+## controllers/
 
-### `controllers/` — the work
+Named functions, default-exported as an object so a route reads
+`TransferController.sendTransfer`.
 
-Plain named functions, default-exported as an object at the bottom so a route
-file reads `HealthController.getLiveness`.
+A controller reads what it needs off the request, calls the rules, and maps the result to a
+status code. It does not build SQL and does not reach into another controller.
 
-A controller reads what it needs off the request, calls the rules, and sends a
-response. It is `async` with a try/catch as soon as it touches the database. The
-catch logs the real error and returns a safe message — and the error middleware
-is still registered as a backstop for anything a catch misses.
+## services/
 
-A controller does **not** build SQL inline once `models/` exists, and does not
-reach into another controller.
+`transferService.ts` is the one place that does not fit the layer pattern cleanly, and that is
+deliberate.
 
-### `middleware/` — cross-cutting concerns
+A transfer owns a transaction boundary, a lock order, an idempotency claim and two balance
+writes. Splitting that across a controller and a model would hide the transaction from the
+code that depends on it.
 
-| File | Job | Status |
-| --- | --- | --- |
-| `requestId.ts` | A UUID per request, on `req.requestId` and `X-Request-Id` | Built |
-| `errorHandler.ts` | `respondNotFound` and `respondInternalError` | Built |
-| `auth.ts` | `verifyToken` (who are you), `requireRole` (are you allowed) | Not built |
-| `validate.ts` | Request validation, one exported array per request type | Not built |
+So it is one function. It takes validated details and runs the steps in
+[domain.md](domain.md) in order, readable top to bottom.
 
-`requestId.ts` adds a property to the Express request, which TypeScript has to be
-told about:
+Two rules hold throughout:
+
+- Every query in the transaction takes the same client, passed in explicitly. A helper that
+  reaches for the root client runs outside the transaction and escapes the locks.
+- Nothing hides a commit, a retry, a balance change or a lock. Those are the parts a reviewer
+  has to find.
+
+## middleware/
+
+| File | Job |
+| --- | --- |
+| `requestId.ts` | A UUID per request, on `req.requestId` and `X-Request-Id` |
+| `auth.ts` | `verifyToken` for identity, `requireRole` for permission |
+| `validate.ts` | Zod validation, one exported middleware per request type |
+| `cors.ts` | The origin allowlist and the headers a browser client needs |
+| `rateLimit.ts` | Six quotas, keyed by caller, account or IP |
+| `errorHandler.ts` | `respondNotFound` and `respondInternalError` |
+
+`requestId.ts` adds a property to the Express request, which TypeScript has to be told about:
 
 ```ts
 declare global {
@@ -144,125 +139,50 @@ declare global {
 }
 ```
 
-That is the same pattern the earlier project uses for `req.userId`.
+`respondInternalError` takes four arguments because that is how Express recognizes an error
+handler. It checks `res.headersSent`, because a response that has begun cannot be replaced. It
+classifies the error: a client fault keeps its `4xx`, a transient database failure becomes
+`503`, and only a genuine defect is a `500`.
 
-`errorHandler.ts` holds the two functions that make the error contract true
-rather than aspirational. `respondInternalError` takes four arguments because
-that is how Express recognises an error handler, and checks `res.headersSent`
-because a response that has begun cannot be replaced.
+`requireRole` reads the role and blocked flag from PostgreSQL rather than from the token. See
+[ADR 15](decisions.md).
 
-### `models/` — the records
+## domain/
 
-Contains the shared Prisma client, adapter configuration, and seed operations.
-Model definitions and migrations live under server/prisma; generated code is ignored.
+Zod schemas and the pure rules. Amount parsing, request normalization, the fingerprint, and
+whether a supplied balance and status permit a transfer. Data in, data out, testable without a
+database.
 
-A model knows about storage and about the rules that make a record valid. It
-knows nothing about HTTP: no request, no response, no status codes. That way the
-same rule can be called from an endpoint, the seed script or the reconciliation
-command, and can be tested without a server.
+A policy function can decide whether a supplied balance is sufficient. It cannot guarantee the
+balance is current. Only the locked transaction can, which is why the service is what fetches
+under lock.
 
----
+## models/
 
-## Where the money logic will live
+The shared Prisma client, the locking reads, the seed and the reconciliation checks. Model
+definitions and migrations live in `server/prisma`. Generated code is gitignored.
 
-The transfer is the one piece that does not fit the pattern cleanly, and it is
-worth saying why in advance.
+A model knows about storage and about what makes a record valid. It knows nothing about HTTP.
+The same rule can be called from an endpoint, the seed or the reconciliation command.
 
-A transfer is one cohesive operation that owns a transaction boundary, a lock
-order, an idempotency claim and two balance writes. That cannot be split across
-a controller and a model without hiding the transaction from the code that
-depends on it, and it cannot sit in a route handler without making the handler
-the opposite of thin.
+The locking reads are raw SQL, because row-level lock clauses are not expressible through
+Prisma's query builder. Every raw query qualifies its schema explicitly. See
+[ADR 10](decisions.md).
 
-So it will be one function that takes the request's already-validated details and
-a transaction client, and runs the nine steps in
-[domain.md](domain.md#transfers) in order, top to bottom, readable as a list. The
-controller authenticates, validates, calls it, and maps its result to a status
-code.
+## logger.ts
 
-Two rules that hold wherever it ends up living:
+One `pino` instance, because `pino-http` attaches it to the request while the error handler and
+the transfer service write to the same one. There is no wrapper; callers use pino's own
+methods.
 
-- **Every query in the transaction uses the same client**, passed in explicitly.
-  A helper that reaches for a pool instead would run outside the transaction and
-  silently escape the locks.
-- **Nothing hides a commit, a retry, a balance change or a lock.** Those are the
-  parts a reviewer has to be able to find, so they stay where they can be
-  pointed at.
+JSON when stdout is a pipe, pretty when it is a terminal. The `Authorization` header is
+redacted. `/health` is not logged. Every request line carries `req.ip`, `remoteAddress` and the
+raw `forwardedFor`, which is what makes proxy attribution diagnosable.
 
-The pure parts come out: parsing an amount, normalising a request, building a
-fingerprint, deciding whether a supplied balance and status permit a transfer.
-Those are functions with data in and data out, testable without a database.
+## What is deliberately absent
 
-A policy function can decide whether a *supplied* balance is sufficient. It
-cannot guarantee that balance is current. Only the locked transaction can, which
-is why the two are separate and the service is what fetches under lock.
+No dependency injection container, no generic repository, no service locator, no base
+controller, no provider interface, no event bus, no state machine helper.
 
----
-
-## What deliberately is not here
-
-No dependency injection container, no generic repository, no service locator, no
-base controller, no provider interface, no event bus, no state machine helper.
-
-Each would add a layer whose only current job is forwarding. The build spec warns
-against exactly this, and the cost is paid twice: once writing it, and again by
-whoever has to explain it. A layer arrives when it has a concrete job — the
-transfer is the one case where that argument has been made and accepted.
-
----
-
-## Request flow, end to end
-
-A `GET /health/live`:
-
-1. `index.ts` has already loaded `.env`, built the app and called `listen`.
-2. `attachRequestId` puts a UUID on `req.requestId` and in `X-Request-Id`.
-3. The path matches `/health`, so `HealthRoute` takes it and matches `/live`.
-4. `HealthController.getLiveness` responds `{"status":"ok"}`.
-
-A `GET /nope`: steps 1 and 2, then no route matches, so Express reaches
-`respondNotFound`, which returns `404` in the error format carrying the same ID
-as the header.
-
-A route that throws: steps 1 and 2, then the throw — or the rejected promise,
-since Express 5 forwards those automatically — reaches `respondInternalError`,
-which logs the real error with the request ID and returns `500` with a fixed
-message.
-
----
-
-## Build order
-
-Stages, each on its own branch. The order is the build spec's: the risky core
-goes early, and the tests that prove it go immediately after.
-
-| Stage | Branch | Delivers |
-| --- | --- | --- |
-| 1 | `feature/project-foundation` | HTTP foundation, request IDs, the error contract — **done** |
-| 2 | `feature/database-migrations` | Seven tables, every constraint |
-| 3 | `feature/seed-data` | System wallet, funded demo customers, blacklist, admin |
-| 4 | `feature/health-ready` | The pool and `/health/ready` |
-| 5 | `feature/render-deploy` | Live, with migrations on deploy |
-| 6 | `feature/auth` | Registration, login, JWT, authorisation |
-| 7 | `feature/transfers` | The atomic idempotent transfer |
-| 8 | `feature/transfer-history` | `GET /transfers` and `/transfers/:id` |
-| 9 | `feature/admin-restrictions` | Block and unblock, audited |
-| 10 | `feature/rate-limiting` | Per-user and per-IP limits |
-| 11 | `feature/reconciliation` | `npm run reconcile` |
-
-Stage 5 is early on purpose. Deployment problems should surface on day one, not
-the night before submission.
-
----
-
-## Stack
-
-Node 22, Express 5, strict TypeScript, PostgreSQL, Prisma 7, Zod, dotenv, and
-Vitest. Prisma's pg adapter owns the underlying connection pool. Models preserve
-existing SQL table names and bigint money. Custom migration SQL preserves CHECK
-constraints and the partial index; future row locks run through the transaction
-client's parameterized raw-query API. See Q13 and [the Prisma workflow](prisma.md).
-
-Node runs source TypeScript in development. Client generation runs on install/build,
-and compilation rewrites source imports to JavaScript for deployment. Generated
-Prisma Client files are never edited or committed.
+Each would add a layer whose only job is forwarding. A layer arrives when it has a concrete
+job. The transfer service is the one case where that argument was made and accepted.

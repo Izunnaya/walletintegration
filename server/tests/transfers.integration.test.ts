@@ -147,9 +147,22 @@ describe("atomic, idempotent transfers over HTTP", () => {
     expect(await authPrisma.idempotencyRecord.count({ where: { userId: source.userId } })).toBe(0);
   });
 
-  it("concurrent duplicate keys create exactly one transfer and one ledger pair", async () => {
+  it("twenty concurrent duplicate keys create exactly one transfer and one ledger pair", async () => {
     const source = await account(); const destination = await account(0n); const key = randomUUID();
-    const responses = await Promise.all(Array.from({ length: 4 }, (_, index) => send(source.token, index % 2 ? { ...body(source, destination), sourceWalletId: source.publicId, destinationWalletId: destination.publicId } : body(source, destination), key)));
+    // Twenty at once, with every other request naming the wallets by their public id rather
+    // than their numeric one. Both representations must resolve to the same idempotency
+    // record, or a client that switched form would be able to send the transfer twice.
+    const responses = await Promise.all(
+      Array.from({ length: 20 }, (_, index) =>
+        send(
+          source.token,
+          index % 2
+            ? { ...body(source, destination), sourceWalletId: source.publicId, destinationWalletId: destination.publicId }
+            : body(source, destination),
+          key,
+        ),
+      ),
+    );
     for (let response of responses) {
       if (response.status === 503) response = await send(source.token, body(source, destination), key);
       expect(response.status).toBe(201);
@@ -163,10 +176,20 @@ describe("atomic, idempotent transfers over HTTP", () => {
     await assertBooksBalance();
   });
 
-  it("concurrent overspending only allows the affordable transfer", async () => {
+  it("twelve concurrent overspending requests only allow the affordable transfer", async () => {
     const source = await account(); const destination = await account(0n);
-    const responses = await Promise.all([send(source.token, body(source, destination, "800")), send(source.token, body(source, destination, "800"))]);
-    expect(responses.map((response) => response.status).sort()).toEqual([201, 422]);
+    const attempts = await Promise.all(Array.from({ length: 12 }, async () => {
+      const key = randomUUID();
+      return { key, response: await send(source.token, body(source, destination, "800"), key) };
+    }));
+    // 503 is backpressure, not a rejection. Resolve uncertain attempts with their original key.
+    for (const attempt of attempts) {
+      if (attempt.response.status === 503) {
+        attempt.response = await send(source.token, body(source, destination, "800"), attempt.key);
+      }
+    }
+    expect(attempts.filter(({ response }) => response.status === 201)).toHaveLength(1);
+    expect(attempts.filter(({ response }) => response.status === 422)).toHaveLength(11);
     expect(await balance(source)).toBe(200n); expect(await balance(destination)).toBe(800n);
     await assertBooksBalance();
   });

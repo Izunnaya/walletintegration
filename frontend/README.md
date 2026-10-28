@@ -78,7 +78,6 @@ The 17 checks cover exact large amounts/IDs, password bytes, login/registration,
 
 Production smoke verification separately used an existing demo account to read its wallet and display the transfer form. No money or admin changes were submitted.
 
-
 ## Public wallet identifiers
 
 Wallet display, copy, recipient entry, confirmation and history use persisted `wlt_` identifiers. The backend retains numeric primary keys for ledger relationships and accepts numeric transfer inputs for compatibility. Public response fields are optional during rollout, so the UI can still read the previous API and replay older saved responses. Existing numeric transfer attempts keep their original body and key. Deploy the backend migration and API to activate public IDs; frontend formatting alone does not create them.
