@@ -76,3 +76,12 @@ Everything else raised during the build has been answered and moved to
 
 That is a statement about questions, not about completeness: what is built and what is not is
 in the README's "Where it stands" table.
+
+
+Q32 production audit follow-up: 32 invalid login requests in a short parallel
+burst returned fresh, non-monotonic counters for the same client. The caller
+buckets still need the logged ingress chain to resolve. The new code exposes
+TRUST_PROXY_HOPS, defaults direct local traffic to zero, and requires an explicit
+value on Render. The IPv6 helper and a separate normalized-email login quota
+mitigate additional bypasses, but do not establish the correct ingress hop count.
+See docs/production-audit-2026-10-28.md.

@@ -3,6 +3,8 @@ import { Prisma } from "../generated/prisma/client.ts";
 import { prisma } from "../models/db.ts";
 import { lockUserForRestriction } from "../models/transferLocks.ts";
 import type { RestrictionRequest } from "../domain/restrictionRequest.ts";
+import { databaseIdSchema } from "../domain/transferRequest.ts";
+import { classifyTransactionError } from "../models/transactionErrors.ts";
 
 // Blocking and unblocking, each committed together with its audit row.
 //
@@ -31,13 +33,13 @@ async function applyRestriction(
   const actor = req.caller;
   if (!actor) throw new Error("verifyToken is required before applyRestriction");
 
-  const requested = req.params.id;
-  if (typeof requested !== "string" || !/^\d+$/.test(requested)) {
+  const requested = databaseIdSchema.safeParse(req.params.id);
+  if (!requested.success) {
     refuse(res, req, 404, "USER_NOT_FOUND", "No such user.");
     return;
   }
 
-  const affectedId = BigInt(requested);
+  const affectedId = requested.data;
 
   // An admin blocking themselves would lock themselves out with no way back, since only an
   // admin can unblock. Refused rather than left as a trap.
@@ -108,26 +110,20 @@ async function applyRestriction(
     // A lock timeout means a transfer is holding this user row right now. That is the
     // serialisation working, not a failure, and the honest answer is to say so and let the
     // admin try again rather than to wait indefinitely.
-    if (isLockTimeout(error)) {
+    if (classifyTransactionError(error) !== "unexpected") {
       res.setHeader("Retry-After", "1");
       refuse(
         res,
         req,
         503,
         "USER_BUSY",
-        "This account is being used by a transfer. Try again.",
+        "This account is temporarily unavailable. Retry the same administrative request.",
       );
       return;
     }
 
     throw error;
   }
-}
-
-function isLockTimeout(error: unknown): boolean {
-  if (typeof error !== "object" || error === null) return false;
-  const candidate = error as { meta?: { code?: unknown } };
-  return candidate.meta?.code === "55P03";
 }
 
 const blockUser = (req: Request, res: Response<unknown, { body: RestrictionRequest }>) =>

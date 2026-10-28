@@ -1,21 +1,9 @@
-import rateLimit from "express-rate-limit";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
+import { createHash } from "node:crypto";
 import type { Request, Response } from "express";
 
-// Three limits, because the three kinds of request fail differently.
-//
-// Transfers are the tightest: they move money. Auth is next, and is keyed by IP as well as
-// by account, because the thing being guarded against is someone working through passwords
-// for many accounts from one place. Reads are loosest.
-//
-// The store is in memory. That is correct for one instance and wrong for more than one:
-// each process would keep its own counts, so N instances would allow N times the limit, and
-// a restart forgets everything. Moving to a shared store is the fix, and is not needed while
-// the service runs as a single Render web service.
-//
-// The keying is the live problem, not the store. These limits are only per-caller if req.ip
-// is the caller, and on Render it is not - see Q32 in OPEN-QUESTIONS.md. The counters in the
-// response headers look correct while this happens, which is why the request log now records
-// req.ip and the raw forwarded chain side by side.
+// In-memory counters are for one process only. Multiple replicas require a shared store.
+// IP correctness depends on TRUST_PROXY_HOPS matching the deployed ingress chain.
 
 function refusal(req: Request, res: Response) {
   res.status(429).json({
@@ -30,7 +18,7 @@ function refusal(req: Request, res: Response) {
 // Keyed by account once authenticated, falling back to IP. Without the fallback an
 // unauthenticated flood would share one bucket and lock everyone out together.
 function callerKey(req: Request): string {
-  return req.caller ? `user:${req.caller.userId}` : `ip:${req.ip ?? "unknown"}`;
+  return req.caller ? `user:${req.caller.userId}` : `ip:${ipKeyGenerator(req.ip ?? req.socket.remoteAddress ?? "unknown")}`;
 }
 
 const shared = {
@@ -56,7 +44,7 @@ export const authLimiter = rateLimit({
   limit: 20,
   // Always by IP. Keying a login attempt by account would let someone try one password
   // against a thousand accounts without ever filling a bucket.
-  keyGenerator: (req: Request) => `ip:${req.ip ?? "unknown"}`,
+  keyGenerator: (req: Request) => `ip:${ipKeyGenerator(req.ip ?? req.socket.remoteAddress ?? "unknown")}`,
 });
 
 export const readLimiter = rateLimit({
@@ -64,4 +52,21 @@ export const readLimiter = rateLimit({
   windowMs: 60_000,
   limit: 240,
   keyGenerator: callerKey,
+});
+
+
+// Limits password guessing and hashing work for one account across rotating IPs.
+export const loginAccountLimiter = rateLimit({
+  ...shared,
+  windowMs: 60_000,
+  limit: 10,
+  keyGenerator: (_req: Request, res: Response) => {
+    const email: unknown = res.locals.body?.email;
+    if (typeof email !== "string") throw new Error("Validate login before applying the account limit");
+    return createHash("sha256").update(email).digest("hex");
+  },
+});
+
+export const adminLimiter = rateLimit({
+  ...shared, windowMs: 60_000, limit: 30, keyGenerator: callerKey,
 });

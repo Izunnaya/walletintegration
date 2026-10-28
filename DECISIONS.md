@@ -871,3 +871,37 @@ pino's own methods and `src/logger.ts` holds configuration only.
 
 Every question raised during the build has been answered. [OPEN-QUESTIONS.md](OPEN-QUESTIONS.md)
 is empty, and stays in the repository because the next question goes there first.
+
+
+## Production audit and hardening (28 October 2026)
+
+See docs/production-audit-2026-10-28.md for live observations, latency samples,
+financial restoration, and fixes awaiting deployment. The main live financial
+checks passed: duplicate intents moved money once, overspending was rejected,
+opposite-direction transfers conserved balances, and source/history/admin access
+checks held. A fresh-account test proved the read quota works; earlier probes
+crossed a reset boundary and were inconclusive.
+
+Code fixes reuse the bounded ID schema on history/admin routes, use the rate-limit
+library's IPv6 subnet helper, add a login-account quota and an admin quota, and
+re-read current admin permissions from PostgreSQL. Helmet supplies security headers,
+no-store applies to API responses, JSON is limited to 16 KB, and preflights now carry
+request IDs. Admin transient failures use the shared database classifier.
+
+Q32 is still a deployment question: TRUST_PROXY_HOPS is explicit configuration,
+zero for direct local access and mandatory on Render. The actual production value
+requires the logged ingress chain; it must not be guessed. Local correctness is
+not proof that a running deployment has received the fix. Re-test after deploying.
+
+In-memory quotas are intentionally limited to one process. A shared limiter store
+is required before adding workers/replicas. No financial correctness check was
+weakened to make a stress test faster, and no password cost was reduced.
+
+
+Final verification: 105 unit/security tests and 71 distinct PostgreSQL API tests
+passed across the targeted runs. This includes 20 concurrent duplicate transfers,
+12 concurrent overspending attempts, both block/transfer orderings, admin quota
+and stale-role checks. The optimized lock-query version passed all 16 transfer
+tests. TypeScript checking, the production build and audit-script syntax check
+passed. The production dependency audit reported zero known vulnerabilities.
+Schema/seed/reconciliation suites were not rerun; no migration changed.

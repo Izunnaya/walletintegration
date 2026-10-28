@@ -1,6 +1,7 @@
 import type { NextFunction, Request, Response } from "express";
 import { readToken } from "../models/authToken.ts";
 import type { AuthenticatedCaller } from "../models/authToken.ts";
+import { prisma } from "../models/db.ts";
 
 // This is how you add custom properties to the express request.
 declare global {
@@ -53,17 +54,26 @@ export const verifyToken = (req: Request, res: Response, next: NextFunction) => 
 
 // requireRole: are you allowed. Always registered after verifyToken.
 export const requireRole =
-  (role: "customer" | "admin") => (req: Request, res: Response, next: NextFunction) => {
+  (role: "customer" | "admin") => async (req: Request, res: Response, next: NextFunction) => {
     if (!req.caller) {
       refuse(res, req, 401, "UNAUTHENTICATED", "A bearer token is required.");
       return;
     }
 
-    if (req.caller.role !== role) {
+    // Privileged actions use current permissions: a signed token can outlive a block or demotion.
+    const user = await prisma.user.findUnique({
+      where: { id: req.caller.userId }, select: { role: true, isBlocked: true },
+    });
+    if (!user || user.role !== role) {
       // 403, not 404: the route exists and the caller is known, they simply may not use it.
       // The 404-instead-of-403 rule applies to records, where confirming an id exists is
       // itself a leak. A route is not a record.
       refuse(res, req, 403, "FORBIDDEN", "This action requires a different role.");
+      return;
+    }
+
+    if (user.isBlocked) {
+      refuse(res, req, 403, "ACCOUNT_BLOCKED", "This account is blocked.");
       return;
     }
 
