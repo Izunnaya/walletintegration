@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { publicWalletIdSchema } from "@/lib/validation";
 
 export const userSchema = z.object({
   id: z.string(),
@@ -7,6 +8,7 @@ export const userSchema = z.object({
   role: z.enum(["customer", "admin"]),
 });
 export const walletSchema = z.object({
+  publicId: publicWalletIdSchema.optional(),
   id: z.string(),
   currency: z.literal("NGN"),
   balanceMinor: z.string().regex(/^\d+$/),
@@ -20,6 +22,8 @@ export const registrationSchema = z.object({
   wallet: walletSchema,
 });
 export const transferSchema = z.object({
+  sourceWalletPublicId: publicWalletIdSchema.optional(),
+  destinationWalletPublicId: publicWalletIdSchema.optional(),
   id: z.string(),
   reference: z.string(),
   sourceWalletId: z.string(),

@@ -12,9 +12,10 @@ const BalanceCard = ({
   wallet: Wallet;
   userId: string;
 }) => {
+  const walletId = wallet.publicId ?? wallet.id;
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(wallet.id);
+      await navigator.clipboard.writeText(walletId);
       notify.success("Wallet ID copied");
     } catch {
       notify.error(null, "Select the wallet ID to copy it manually.");
@@ -50,7 +51,7 @@ const BalanceCard = ({
           <div>
             <dt className="text-muted-foreground">Wallet ID</dt>
             <dd className="mt-2 flex items-center gap-3">
-              <code>{wallet.id}</code>
+              <code className="break-all">{walletId}</code>
               <button aria-label="Copy wallet ID" onClick={copy}>
                 <Copy className="size-4" />
               </button>

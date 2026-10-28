@@ -1,7 +1,7 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { databaseIdSchema } from "@/lib/validation";
+import { walletIdentifierSchema } from "@/lib/validation";
 import { Input } from "@/components/ui/input";
 import {
   Field,
@@ -13,7 +13,7 @@ import LoadingButton from "@/components/LoadingButton";
 import { money, toMinor } from "@/lib/money";
 
 const transferFormSchema = z.object({
-  recipientWalletId: databaseIdSchema,
+  recipientWalletId: walletIdentifierSchema,
   amount: z
     .string()
     .trim()
@@ -66,8 +66,8 @@ const TransferForm = ({
           <FieldLabel htmlFor="recipient">Recipient wallet ID</FieldLabel>
           <Input
             id="recipient"
-            inputMode="numeric"
-            placeholder="e.g. 12"
+
+            placeholder="wlt_..."
             disabled={disabled || isSubmitting}
             {...register("recipientWalletId")}
             aria-invalid={!!errors.recipientWalletId}

@@ -75,8 +75,10 @@ const TransactionsTable = ({
                     )}
                     {received ? "From" : "To"} wallet{" "}
                     {received
-                      ? transfer.sourceWalletId
-                      : transfer.destinationWalletId}
+                      ? (transfer.sourceWalletPublicId ??
+                        transfer.sourceWalletId)
+                      : (transfer.destinationWalletPublicId ??
+                        transfer.destinationWalletId)}
                   </Link>
                 </TableCell>
                 <TableCell

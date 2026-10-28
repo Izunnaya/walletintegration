@@ -19,8 +19,11 @@ const TransferReceipt = ({
   const rows = [
     ["Transfer ID", transfer.id],
     ["Direction", transfer.direction === "sent" ? "Sent" : "Received"],
-    ["Source wallet", transfer.sourceWalletId],
-    ["Destination wallet", transfer.destinationWalletId],
+    ["Source wallet", transfer.sourceWalletPublicId ?? transfer.sourceWalletId],
+    [
+      "Destination wallet",
+      transfer.destinationWalletPublicId ?? transfer.destinationWalletId,
+    ],
     ["Reference", transfer.reference],
     ["Time", new Date(transfer.createdAt).toLocaleString()],
     ["Currency", transfer.currency],

@@ -7,6 +7,15 @@ export const databaseIdSchema = z
   .transform((value) => BigInt(value))
   .pipe(z.bigint().positive().max(9_223_372_036_854_775_807n))
   .transform(String);
+export const publicWalletIdSchema = z
+  .string()
+  .trim()
+  .regex(/^wlt_[0-9a-f]{32}$/, "Enter a valid wallet ID.");
+// Numeric IDs remain accepted for existing clients and saved transfer attempts.
+export const walletIdentifierSchema = z.union([
+  publicWalletIdSchema,
+  databaseIdSchema,
+]);
 export const emailSchema = z
   .string()
   .trim()

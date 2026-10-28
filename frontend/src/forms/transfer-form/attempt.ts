@@ -1,10 +1,10 @@
 import { z } from "zod";
 import type { SendTransferRequest } from "@/api/contracts";
-import { databaseIdSchema } from "@/lib/validation";
+import { walletIdentifierSchema } from "@/lib/validation";
 
 const attemptSchema = z.object({
-  sourceWalletId: databaseIdSchema,
-  destinationWalletId: databaseIdSchema,
+  sourceWalletId: walletIdentifierSchema,
+  destinationWalletId: walletIdentifierSchema,
   amountMinor: z
     .string()
     .regex(/^\d+$/)

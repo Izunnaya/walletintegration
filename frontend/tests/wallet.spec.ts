@@ -25,12 +25,16 @@ test("registration enforces the server's UTF-8 password byte limit", () => {
   );
 });
 
+const sourcePublicId = "wlt_" + "a".repeat(32);
+const destinationPublicId = "wlt_" + "b".repeat(32);
 const createdAt = "2026-10-28T10:00:00.000Z";
 const transfer = (id = "30") => ({
   id,
   reference: `reference-${id}`,
   sourceWalletId: "111",
   destinationWalletId: "222",
+  sourceWalletPublicId: sourcePublicId,
+  destinationWalletPublicId: destinationPublicId,
   amountMinor: "150050",
   currency: "NGN",
   createdAt,
@@ -119,7 +123,12 @@ async function setupApi(page: Page, role: "customer" | "admin" = "customer") {
       return json(
         {
           user: { ...customer, name: body.name, email: body.email },
-          wallet: { id: "333", currency: "NGN", balanceMinor: "0" },
+          wallet: {
+            id: "333",
+            publicId: "wlt_" + "c".repeat(32),
+            currency: "NGN",
+            balanceMinor: "0",
+          },
         },
         201,
       );
@@ -150,6 +159,7 @@ async function setupApi(page: Page, role: "customer" | "admin" = "customer") {
       const second = request.headers().authorization === "Bearer test-token-2";
       return json({
         id: second ? "222" : "111",
+        publicId: second ? destinationPublicId : sourcePublicId,
         currency: "NGN",
         balanceMinor: second ? "0" : "50000000",
       });
@@ -246,10 +256,11 @@ async function reviewTransfer(page: Page) {
     .getByRole("link", { name: "Send money", exact: true })
     .first()
     .click();
-  await page.getByLabel("Recipient wallet ID").fill("222");
+  await page.getByLabel("Recipient wallet ID").fill(destinationPublicId);
   await page.getByLabel("Amount (NGN)").fill("1,500.50");
   await page.getByRole("button", { name: "Review transfer" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByRole("dialog")).toContainText(destinationPublicId);
 }
 
 test("sign-in uses real API shapes and shows only supported customer controls", async ({
@@ -383,8 +394,8 @@ test("an interrupted transfer survives reload and reuses its exact key and body"
   expect(state.transfers).toHaveLength(2);
   expect(state.transfers[1]).toEqual(state.transfers[0]);
   expect(state.transfers[0].body).toEqual({
-    sourceWalletId: "111",
-    destinationWalletId: "222",
+    sourceWalletId: sourcePublicId,
+    destinationWalletId: destinationPublicId,
     amountMinor: "150050",
     currency: "NGN",
   });
@@ -591,4 +602,38 @@ test("mobile navigation and the installed theme and motion providers work", asyn
   await expect(
     page.getByRole("button", { name: "Sign out" }),
   ).not.toBeVisible();
+});
+
+test("a saved numeric transfer remains recoverable after public IDs are introduced", async ({
+  page,
+}) => {
+  const state = await setupApi(page);
+  await login(page);
+  await page.evaluate(() =>
+    sessionStorage.setItem(
+      "wallet.transfer:1",
+      JSON.stringify({
+        sourceWalletId: "111",
+        destinationWalletId: "222",
+        amountMinor: "150050",
+        idempotencyKey: "b5b5de03-865a-4ae5-bc54-bf227b731f15",
+        phase: "unconfirmed",
+        retryAt: 0,
+      }),
+    ),
+  );
+  await page.goto("/transfer");
+  await page.getByRole("button", { name: "Resume transfer" }).click();
+  await page.getByRole("button", { name: "Check transfer status" }).click();
+  await expect(
+    page.getByRole("heading", { name: "Transfer completed" }),
+  ).toBeVisible();
+  expect(state.transfers[0].body).toMatchObject({
+    sourceWalletId: "111",
+    destinationWalletId: "222",
+  });
+  expect(state.transfers[0].key).toBe("b5b5de03-865a-4ae5-bc54-bf227b731f15");
+  await expect(
+    page.getByText(destinationPublicId, { exact: true }),
+  ).toBeVisible();
 });

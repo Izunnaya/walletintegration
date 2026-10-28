@@ -13,7 +13,8 @@ import { Button } from "@/components/ui/button";
 
 const TransferPage = () => {
   const query = useMyWallet();
-  const transfer = useTransferAttempt(query.wallet?.id);
+  const walletId = query.wallet?.publicId ?? query.wallet?.id;
+  const transfer = useTransferAttempt(walletId);
   const [dialogOpen, setDialogOpen] = useState(false);
   const onReview = (data: TransferFormData) => {
     if (transfer.authorise(data)) setDialogOpen(true);
@@ -65,7 +66,7 @@ const TransferPage = () => {
         <section className="rounded-xl border bg-card p-6">
           <h2 className="mb-6 text-base font-semibold">Transfer details</h2>
           <TransferForm
-            fromWalletId={query.wallet.id}
+            fromWalletId={walletId!}
             balanceMinor={query.wallet.balanceMinor}
             disabled={transfer.unconfirmed}
             isSubmitting={transfer.isPending}
