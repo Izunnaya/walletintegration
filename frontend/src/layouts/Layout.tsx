@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { Outlet, useLocation } from "react-router-dom";
 import { AnimatePresence } from "framer-motion";
 import { Menu } from "lucide-react";
@@ -11,6 +11,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { RouteFallback } from "@/components/LoadingStates";
 import GlobalProgressBar from "@/components/GlobalProgressBar";
 import PageTransition from "@/components/PageTransition";
 import Sidebar from "@/components/Sidebar";
@@ -90,7 +91,11 @@ const Layout = () => {
           */}
           <AnimatePresence mode="wait" initial={false}>
             <PageTransition key={pathname}>
-              <Outlet />
+              {/* Inside PageTransition, so a screen whose chunk is still downloading fades
+                  in with its placeholder rather than appearing abruptly once it resolves. */}
+              <Suspense fallback={<RouteFallback />}>
+                <Outlet />
+              </Suspense>
             </PageTransition>
           </AnimatePresence>
 

@@ -1,13 +1,18 @@
+import { lazy, Suspense } from "react";
 import { Navigate, Route, Routes } from "react-router-dom";
 import Layout from "./layouts/Layout";
 import { useWorkspace } from "./components/WorkspaceProvider";
-import OverviewPage from "./pages/OverviewPage";
-import TransferPage from "./pages/TransferPage";
-import TransactionsPage from "./pages/TransactionsPage";
-import TransferDetailPage from "./pages/TransferDetailPage";
-import UserManagementPage from "./pages/UserManagementPage";
-import CreateAccountPage from "./pages/CreateAccountPage";
-import LoginPage from "./pages/LoginPage";
+
+// One chunk per screen. Opening the overview used to download the admin screens, both forms
+// and the receipt as well; now it downloads the overview. The Suspense boundary that covers
+// the gap lives in Layout, around the Outlet.
+const OverviewPage = lazy(() => import("./pages/OverviewPage"));
+const TransferPage = lazy(() => import("./pages/TransferPage"));
+const TransactionsPage = lazy(() => import("./pages/TransactionsPage"));
+const TransferDetailPage = lazy(() => import("./pages/TransferDetailPage"));
+const UserManagementPage = lazy(() => import("./pages/UserManagementPage"));
+const CreateAccountPage = lazy(() => import("./pages/CreateAccountPage"));
+const LoginPage = lazy(() => import("./pages/LoginPage"));
 
 // The export had a `Screen` union and a `setScreen` call, so nothing had a URL: a transfer
 // receipt could not be linked, the back button left the app, and a refresh lost the screen.
@@ -53,8 +58,15 @@ const AppRoutes = () => {
         />
       </Route>
 
-      {/* Outside the layout: signing in has no sidebar to sit in. */}
-      <Route path="/login" element={<LoginPage />} />
+      {/* Outside the layout, so it needs its own boundary. */}
+      <Route
+        path="/login"
+        element={
+          <Suspense fallback={null}>
+            <LoginPage />
+          </Suspense>
+        }
+      />
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

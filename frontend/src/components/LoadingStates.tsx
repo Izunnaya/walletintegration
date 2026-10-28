@@ -146,6 +146,20 @@ export const ReceiptSkeleton = () => (
   </section>
 );
 
+// Shown while a lazily-loaded route is still being fetched. It cannot be shaped like the
+// screen that is coming, because which screen that is is not known until the chunk resolves -
+// so it is a heading and two panels, which every screen in this app begins with.
+export const RouteFallback = () => (
+  <div aria-busy="true">
+    <Skeleton width={220} height={28} />
+    <div className="mt-2 mb-8">
+      <Skeleton width={320} height={13} />
+    </div>
+    <Skeleton height={190} className="mb-7" />
+    <Skeleton height={260} />
+  </div>
+);
+
 export const FormSkeleton = ({ fields = 3 }: { fields?: number }) => (
   <div className="flex flex-col gap-6">
     {Array.from({ length: fields }, (_, index) => (

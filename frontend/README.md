@@ -2,7 +2,8 @@
 
 The wallet UI. React 19 on Vite, React Router for the screens, TanStack Query for everything
 that comes from the server, react-hook-form with Zod for the forms, Tailwind 4 and shadcn/ui
-for the styling.
+for the styling, framer-motion for transitions, react-loading-skeleton for placeholders and
+sonner for notifications.
 
 ```sh
 npm install
@@ -37,13 +38,44 @@ src/
   forms/<name>-form/        One folder per form: its Zod schema and its fields
   hooks/                    Logic worth naming on its own
   layouts/Layout.tsx        Sidebar, top bar, footer, toaster
-  lib/                      money.ts and the cn() helper
+  lib/                      money.ts, notify.ts, motion.ts and the cn() helper
   pages/                    One file per screen, rendering and nothing else
 ```
 
 A page reads hooks and renders. It does not fetch, and it never holds server data in
 `useState` — that is what the query cache is for. A completed transfer invalidates the wallet
 and the transfer list, and every screen showing either of them updates.
+
+## Motion, loading and notifications
+
+Three conventions, each in one place, so none of them drift:
+
+- **`lib/motion.ts`** holds every timing. Inconsistent motion reads as a bug even when nobody
+  can say why. The rule is that money changing is the only thing on screen that should feel
+  like an event; everything else gets a short fade and a few pixels of travel. Accessibility
+  is set once in `main.tsx` — `MotionConfig reducedMotion="user"` drops transforms for anyone
+  whose system asks for reduced motion, so no component can forget.
+- **`components/LoadingStates.tsx`** holds placeholders shaped like the thing that is coming,
+  so content fills a shape already on screen instead of pushing the page around. The
+  `GlobalProgressBar` covers the other half: a background refetch, where the screen already
+  has content and replacing it with skeletons would throw away what the user is reading.
+- **`lib/notify.ts`** is the only place that raises a toast. It decides what a failure says
+  (always with the request ID, which is what ties a user's report to a log line), what gets
+  announced at all, and how long it stays. Validation belongs beside the field, not in a
+  toast; a failure already visible in an open dialog is not repeated.
+
+Table rows are deliberately **not** staggered — the transactions table re-renders on every
+search keystroke, so a stagger would replay on each keypress.
+
+## Bundle
+
+Screens are split a chunk each with `React.lazy`, and the libraries are split out of the
+entry in `vite.config.ts`. That is about caching more than size: app code changes every
+deploy, React and framer-motion change a few times a year, and bundled together a one-line
+fix invalidates all of it for every returning visitor.
+
+Boot payload is around 186 kB gzipped, which is what it was before motion and skeletons were
+added — the splitting paid for them.
 
 ## Two things carried over from the server's design
 
