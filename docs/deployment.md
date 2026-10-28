@@ -25,6 +25,7 @@ deliberate — see **Why Neon rather than Render PostgreSQL** below.
    | `DATABASE_URL` | Neon → your project → Connect. Use the **pooled** connection string here |
    | `JWT_SECRET` | Generate a fresh one. **Do not reuse the local value** |
    | `SEED_ADMIN_PASSWORD` | Your choice. Shared with reviewers privately, never published |
+   | `CORS_ORIGINS` | Where the browser client is served from, comma-separated. Omit until there is one |
 
    Generate the secret with:
 
