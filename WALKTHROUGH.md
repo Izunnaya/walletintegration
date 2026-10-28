@@ -433,3 +433,5 @@ Unsupported demo features were removed: no role switcher, fake account directory
 ### User-facing error messages (2026-10-28)
 
 Login failures explain the problem without displaying internal request IDs. The same rule applies to shared error alerts and toasts. Request IDs remain in the API error and backend logs for tracing; they are diagnostic metadata rather than instructions for the user. Browser regression checks cover failed login and read errors, including successful retry.
+
+Password guidance recommends a mix of uppercase and lowercase letters, numbers and symbols. The bcrypt byte limit stays an internal validation detail; an overlong password gets a plain-language error. This copy does not introduce new character requirements that the backend does not enforce.

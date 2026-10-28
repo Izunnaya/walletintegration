@@ -76,7 +76,7 @@ const CreateAccountForm = ({ isLoading, retryAfter, onSave }: Props) => {
             className={errors.password ? "text-destructive" : ""}
           >
             {errors.password?.message ??
-              "Use at least 12 characters. Passwords are limited to 72 UTF-8 bytes."}
+              "For a strong password, mix uppercase and lowercase letters, numbers and symbols."}
           </FieldDescription>
         </Field>
         <LoadingButton

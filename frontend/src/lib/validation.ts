@@ -19,7 +19,7 @@ export const passwordSchema = z
   .min(1, "Enter your password.")
   .refine(
     (value) => new TextEncoder().encode(value).length <= 72,
-    "Use at most 72 UTF-8 bytes.",
+    "Your password is too long. Choose a shorter one.",
   );
 export const registrationPasswordSchema = passwordSchema.refine(
   (value) => value.trim().length >= 12,
