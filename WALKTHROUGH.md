@@ -435,7 +435,7 @@ no-store applies to API responses, JSON is limited to 16 KB, and preflights now 
 request IDs. Admin transient failures use the shared database classifier.
 
 Q32 is still a deployment question: TRUST_PROXY_HOPS is explicit configuration,
-zero for direct local access and mandatory on Render. The actual production value
+zero when unconfigured, including on Render. Startup logs a warning until configured. The actual production value
 requires the logged ingress chain; it must not be guessed. Local correctness is
 not proof that a running deployment has received the fix. Re-test after deploying.
 
@@ -451,3 +451,18 @@ and stale-role checks. The optimized lock-query version passed all 16 transfer
 tests. TypeScript checking, the production build and audit-script syntax check
 passed. The production dependency audit reported zero known vulnerabilities.
 Schema/seed/reconciliation suites were not rerun; no migration changed.
+
+
+Deployment correction: requiring a newly introduced TRUST_PROXY_HOPS variable at
+module import could stop an existing Render service before it opened a port. The
+setting is now optional; missing/blank values use zero (socket peer only), and
+Render startup logs a warning. The blueprint supplies zero by default. A verified
+proxy count is still needed for per-client auth-IP quotas, but that tuning no
+longer takes the entire API offline. Invalid explicit non-numeric values still
+fail validation. The bootstrap regression covers the missing and blank cases.
+
+Verification of the deployment correction: the compiled dist/index.js reached
+server_listening with NODE_ENV=production and RENDER=true both when
+TRUST_PROXY_HOPS was absent and when it was blank. Both processes performed only
+the normal SELECT 1 startup check and were stopped afterward. All 105 unit/security
+tests, typecheck and the production build also passed.

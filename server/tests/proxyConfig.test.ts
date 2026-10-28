@@ -7,11 +7,15 @@ describe("proxy configuration", () => {
     vi.stubEnv("RENDER", ""); vi.stubEnv("TRUST_PROXY_HOPS", undefined);
     expect((await import("../src/proxyConfig.ts")).trustedProxyHops).toBe(0);
   });
-  it("requires an explicit observed topology on Render", async () => {
+  it("starts safely on Render without a new configuration variable", async () => {
     vi.stubEnv("RENDER", "true"); vi.stubEnv("TRUST_PROXY_HOPS", undefined);
-    await expect(import("../src/proxyConfig.ts")).rejects.toThrow("Set TRUST_PROXY_HOPS");
+    expect((await import("../src/proxyConfig.ts")).trustedProxyHops).toBe(0);
   });
-  it.each(["", " ", "true", "-1", "1.5", "11"])("rejects invalid hop count %s", async (hops) => {
+  it.each(["", " "])("treats an empty Render setting %j as unconfigured", async (hops) => {
+    vi.stubEnv("RENDER", "true"); vi.stubEnv("TRUST_PROXY_HOPS", hops);
+    expect((await import("../src/proxyConfig.ts")).trustedProxyHops).toBe(0);
+  });
+  it.each(["true", "-1", "1.5", "11"])("rejects invalid hop count %s", async (hops) => {
     vi.stubEnv("RENDER", ""); vi.stubEnv("TRUST_PROXY_HOPS", hops);
     await expect(import("../src/proxyConfig.ts")).rejects.toThrow();
   });

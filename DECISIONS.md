@@ -889,7 +889,7 @@ no-store applies to API responses, JSON is limited to 16 KB, and preflights now 
 request IDs. Admin transient failures use the shared database classifier.
 
 Q32 is still a deployment question: TRUST_PROXY_HOPS is explicit configuration,
-zero for direct local access and mandatory on Render. The actual production value
+zero when unconfigured, including on Render. Startup logs a warning until configured. The actual production value
 requires the logged ingress chain; it must not be guessed. Local correctness is
 not proof that a running deployment has received the fix. Re-test after deploying.
 

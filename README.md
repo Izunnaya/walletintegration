@@ -222,8 +222,8 @@ application data is preserved through verified baselining, never a reset.
 ## Production hardening configuration
 
 Use TRUST_PROXY_HOPS=0 for direct local access. On Render explicitly set the verified
-proxy count using a real request's ingress logs. The app refuses to guess the count
-on Render. The known live auth-IP quota issue remains open until configuration and
+proxy count using a real request's ingress logs. An unset or blank setting safely defaults to zero and logs a warning on Render;
+proxy configuration does not prevent startup. The known live auth-IP quota issue remains open until configuration and
 post-deploy checks confirm it is fixed.
 
 Limits per minute: 20 auth requests per normalized IP/subnet, 10 login attempts per

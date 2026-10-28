@@ -45,7 +45,7 @@ establish maximum sustainable throughput or p99 latency at arbitrary load.
 
 | Priority | Finding | Change | Verification scope |
 | --- | --- | --- | --- |
-| High | Auth caller-IP buckets depend on an incorrect hardcoded proxy count | Explicit TRUST_PROXY_HOPS, default zero for direct local connections, mandatory on Render | Config tests pass; live proxy count still needs ingress-log evidence |
+| High | Auth caller-IP buckets depend on an incorrect hardcoded proxy count | Explicit TRUST_PROXY_HOPS, safe zero fallback on all deployments, with a startup warning on Render | Config tests pass; live proxy count still needs ingress-log evidence |
 | High | Previously issued admin tokens retain power after demotion/blocking | Check current role and blocked state in PostgreSQL on every privileged request | Real database regression tests |
 | Medium | Custom raw-IP keys allow IPv6 address rotation within an assigned subnet | Library ipKeyGenerator applies IPv6 /56 grouping | HTTP quota regression test |
 | Medium | Password hashing could be targeted across many IPs for one email | Limit login attempts to 10/minute per normalized account, in addition to 20/minute per IP | HTTP cross-IP and normalization regression test |
@@ -74,8 +74,9 @@ its existing deployment; it has not been claimed to run the new fixes.
    establish the actual proxy chain. Set TRUST_PROXY_HOPS to the verified count.
    Never set trust proxy to true, and do not choose a count from this report.
 2. Deploy this branch using the existing npm ci --include=dev / migrate / build
-   configuration. The updated blueprint requests the explicit proxy setting;
-   an existing dashboard-managed service must receive it in Environment too.
+   configuration. The updated blueprint supplies a safe zero default; existing services can
+   deploy without adding a variable. Configure the verified count in Environment
+   afterward to enable correct per-client IP quotas.
 3. Re-run npm run audit:production from server/ with AUDIT_REPORT_PATH pointing
    to an output file. Expect new test customers and compensating ledger entries.
    Do not run repeatedly without inspecting failures and confirming funds return.
