@@ -1,0 +1,183 @@
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
+import { once } from "node:events";
+import type { Server } from "node:http";
+import { apiPrisma, prepareApiDatabase, closeApiDatabase } from "./apiDatabase.ts";
+import { hashPassword } from "../src/models/password.ts";
+
+vi.mock("../src/models/db.ts", async () => {
+  const { apiPrisma, apiSchema } = await import("./apiDatabase.ts");
+  return { prisma: apiPrisma, databaseSchema: apiSchema };
+});
+vi.hoisted(() => {
+  process.env.JWT_SECRET = "ratelimit-integration-test-secret-not-for-production";
+});
+import app from "../src/app.ts";
+
+// The limiter keeps its counts in memory for the life of the process, so every test here
+// uses a distinct X-Forwarded-For address as its bucket. The app sets trust proxy to 1, so
+// that header is what the IP-keyed limiter reads — which is also what makes these tests
+// prove the trust-proxy setting works, not just the limits.
+//
+// Without a distinct address per test, one test filling a bucket would make the next fail
+// for reasons that have nothing to do with it.
+
+let server: Server | undefined;
+let baseUrl: string;
+
+const password = "correct horse battery staple";
+const AUTH_LIMIT = 20;
+const READ_LIMIT = 240;
+
+let token: string;
+
+function login(ip: string, body?: unknown) {
+  return fetch(`${baseUrl}/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Forwarded-For": ip },
+    body: JSON.stringify(body ?? { email: "nobody@example.com", password: "wrong password here" }),
+  });
+}
+
+beforeAll(async () => {
+  await prepareApiDatabase();
+  server = app.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const address = server.address();
+  if (!address || typeof address === "string") throw new Error("Expected a TCP address");
+  baseUrl = `http://127.0.0.1:${address.port}`;
+
+  const user = await apiPrisma.user.create({
+    data: {
+      email: "limited@example.com",
+      name: "Limited",
+      passwordHash: await hashPassword(password),
+      role: "customer",
+    },
+  });
+  await apiPrisma.wallet.create({ data: { ownerId: user.id } });
+
+  const response = await login("10.0.0.1", { email: "limited@example.com", password });
+  const body = (await response.json()) as { token: string };
+  token = body.token;
+});
+
+afterAll(async () => {
+  try {
+    if (server) {
+      await new Promise<void>((resolve, reject) => {
+        server?.close((error) => (error ? reject(error) : resolve()));
+      });
+    }
+  } finally {
+    await closeApiDatabase();
+  }
+});
+
+describe("auth rate limit", () => {
+  it("allows exactly the limit, then refuses with 429 and a stable error shape", async () => {
+    const ip = "10.1.0.1";
+    const statuses: number[] = [];
+
+    for (let attempt = 0; attempt < AUTH_LIMIT + 3; attempt += 1) {
+      const response = await login(ip);
+      statuses.push(response.status);
+      if (response.status === 429) {
+        expect(await response.json()).toMatchObject({
+          error: { code: "RATE_LIMITED" },
+        });
+      }
+    }
+
+    // Exactly the limit answered normally; everything after it was refused.
+    expect(statuses.filter((status) => status !== 429)).toHaveLength(AUTH_LIMIT);
+    expect(statuses.slice(AUTH_LIMIT)).toEqual([429, 429, 429]);
+  });
+
+  it("carries the standard RateLimit headers", async () => {
+    const response = await login("10.1.0.2");
+
+    expect(response.headers.get("ratelimit-limit")).toBe(String(AUTH_LIMIT));
+    expect(response.headers.get("ratelimit-remaining")).toBe(String(AUTH_LIMIT - 1));
+    expect(response.headers.get("ratelimit-reset")).not.toBeNull();
+    // Deprecated headers are off, so a client reads one scheme rather than guessing.
+    expect(response.headers.get("x-ratelimit-limit")).toBeNull();
+  });
+
+  it("counts a different address separately, which is what trust proxy makes possible", async () => {
+    const exhausted = "10.1.0.3";
+    for (let attempt = 0; attempt < AUTH_LIMIT; attempt += 1) await login(exhausted);
+
+    expect((await login(exhausted)).status).toBe(429);
+
+    // A different caller is unaffected. If trust proxy were off, both would share the
+    // socket's address and this would be 429 too.
+    expect((await login("10.1.0.4")).status).not.toBe(429);
+  });
+
+  it("counts registration against the same bucket as login", async () => {
+    const ip = "10.1.0.5";
+    for (let attempt = 0; attempt < AUTH_LIMIT; attempt += 1) await login(ip);
+
+    // Both are auth endpoints and share one limiter: filling the bucket with logins must
+    // also close registration, or the limit is trivially sidestepped.
+    const response = await fetch(`${baseUrl}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-Forwarded-For": ip },
+      body: JSON.stringify({ email: "fresh@example.com", name: "Fresh", password }),
+    });
+
+    expect(response.status).toBe(429);
+  });
+});
+
+describe("read rate limit", () => {
+  it("is far looser than the auth limit, so ordinary browsing is unaffected", async () => {
+    const ip = "10.2.0.1";
+    const statuses: number[] = [];
+
+    // Comfortably past the auth limit, nowhere near the read limit.
+    for (let attempt = 0; attempt < AUTH_LIMIT + 10; attempt += 1) {
+      const response = await fetch(`${baseUrl}/wallets/me`, {
+        headers: { Authorization: `Bearer ${token}`, "X-Forwarded-For": ip },
+      });
+      statuses.push(response.status);
+    }
+
+    expect(statuses.every((status) => status === 200)).toBe(true);
+    expect(READ_LIMIT).toBeGreaterThan(AUTH_LIMIT);
+  });
+
+  it("keys an authenticated read by account, not by address", async () => {
+    // Same token, two addresses: the counts follow the account, so the remaining count
+    // keeps falling rather than resetting per address.
+    const first = await fetch(`${baseUrl}/wallets/me`, {
+      headers: { Authorization: `Bearer ${token}`, "X-Forwarded-For": "10.3.0.1" },
+    });
+    const second = await fetch(`${baseUrl}/wallets/me`, {
+      headers: { Authorization: `Bearer ${token}`, "X-Forwarded-For": "10.3.0.2" },
+    });
+
+    const firstRemaining = Number(first.headers.get("ratelimit-remaining"));
+    const secondRemaining = Number(second.headers.get("ratelimit-remaining"));
+
+    expect(secondRemaining).toBe(firstRemaining - 1);
+  });
+});
+
+describe("health checks", () => {
+  it("are not rate limited, so a monitor cannot lock itself out", async () => {
+    const ip = "10.4.0.1";
+    const statuses: number[] = [];
+
+    for (let attempt = 0; attempt < AUTH_LIMIT + 5; attempt += 1) {
+      const response = await fetch(`${baseUrl}/health/live`, {
+        headers: { "X-Forwarded-For": ip },
+      });
+      statuses.push(response.status);
+    }
+
+    // Render polls the health check continuously. A limit here would take the service down
+    // for failing its own check.
+    expect(statuses.every((status) => status === 200)).toBe(true);
+  });
+});
