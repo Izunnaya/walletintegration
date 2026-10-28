@@ -28,6 +28,7 @@ model User {
 }
 
 model Wallet {
+  publicId          String        @unique @default(dbgenerated("('wlt_'::text || replace((gen_random_uuid())::text, '-'::text, ''::text))")) @map("public_id")
   id                BigInt        @id @default(autoincrement())
   ownerId           BigInt        @map("owner_id")
   currency          String        @default("NGN")
