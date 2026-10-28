@@ -49,15 +49,15 @@ const createUser = async (req: Request, res: Response<unknown, { body: RegisterR
       },
       wallet: {
         id: created.wallet.id.toString(),
+        publicId: created.wallet.publicId,
         currency: created.wallet.currency,
         // Money crosses the wire as a string of kobo. A JSON number is a double.
         balanceMinor: created.wallet.balanceMinor.toString(),
       },
     });
   } catch (error) {
-    // P2002 is the unique violation. The email is the only unique column reachable here,
-    // and 409 says the request was well formed but conflicts with what already exists.
-    if (isUniqueViolation(error)) {
+    // Only a duplicate email is a registration conflict; other constraints are server errors.
+    if (isUniqueViolation(error) && await prisma.user.findUnique({ where: { email: res.locals.body.email }, select: { id: true } })) {
       res.status(409).json({
         error: {
           code: "EMAIL_TAKEN",

@@ -1,83 +1,84 @@
-# Frontend
+# Wallet frontend
 
-The wallet UI. React 19 on Vite, React Router for the screens, TanStack Query for everything
-that comes from the server, react-hook-form with Zod for the forms, Tailwind 4 and shadcn/ui
-for the styling.
+React and Vite UI for the wallet API in `../server`. The Restaurant frontend supplied the structure: thin screen components, resource API hooks, workflow form folders, React Hook Form and Zod. Authentication follows this backend's bearer-token contract.
+
+## Run locally
 
 ```sh
-npm install
-cp .env.example .env
-npm run dev          # http://localhost:3001
-npm run typecheck    # tsc -b
-npm run build        # tsc -b && vite build  →  dist/
+npm ci
+# Copy .env.example to .env.local and set VITE_API_BASE_URL.
+npm run dev
+npm run typecheck
+npm run build
 ```
 
-The API lives in `../server` and is the contract. The server never depends on anything here.
+Open http://localhost:3001. `VITE_API_BASE_URL` defaults to http://localhost:3000 and is public build configuration; never put secrets in it. To use the deployed API, set it to `https://walletintegration-6t6r.onrender.com` and restart Vite. The API must allow the frontend origin through CORS. A free Render instance can take time to wake; requests time out after 65 seconds and show a slow-request notice.
 
-## Not wired to the API yet
+## Screens and backend coverage
 
-Every screen reads through `src/api/`, and those hooks currently call `src/api/demoWorkspace.ts`
-— an in-memory stand-in that holds the fixtures and mimics the server's refusals. **That is the
-only file in this project with fake data in it.**
+| Screen | API |
+| --- | --- |
+| Create account | POST /auth/register; creates a customer and wallet, then asks them to sign in |
+| Sign in | POST /auth/login |
+| Overview | GET /wallets/me and recent GET /transfers |
+| Send money | POST /transfers with Idempotency-Key |
+| Transactions | GET /transfers using the server's cursor |
+| Transfer receipt | GET /transfers/:id |
+| Admin account access | POST /admin/users/:id/block or /unblock with a reason |
+| Admin audit log | GET /admin/audit (latest 50 entries) |
+| Service status footer | GET /health/live and /health/ready |
 
-The point of the arrangement is that connecting the real API replaces `demoWorkspace.ts` and the
-bodies of the `api/` hooks, and touches no screen, form or component. Sign-in is deliberately
-left disabled rather than faked, because storing a token is part of that work and a login form
-that looks real but does nothing is worse than one that says so.
+There is no user directory, recipient lookup, profile editor, deposits, transfer notes, analytics or blacklist editor in the current API. The UI asks for the recipient's wallet ID and the administrator's target user ID. Reconciliation, seeding and admin creation remain server CLI operations. User ID and wallet ID are different identifiers.
 
-## Layout
+## Structure and responsibilities
 
-```
+```text
 src/
-  main.tsx                  Providers: Router, QueryClient, Workspace
-  AppRoutes.tsx             Every screen's URL, and the admin guard
-  App.css                   Tailwind 4 theme, and the few component classes
-  api/                      One file per resource, exporting useXxx hooks
-  components/               Shared pieces, with ui/ holding the shadcn primitives
-  forms/<name>-form/        One folder per form: its Zod schema and its fields
-  hooks/                    Logic worth naming on its own
-  layouts/Layout.tsx        Sidebar, top bar, footer, toaster
-  lib/                      money.ts and the cn() helper
-  pages/                    One file per screen, rendering and nothing else
+  api/                         Shared HTTP client, Zod response contracts, resource hooks
+  auth/AuthProvider.tsx        Session lifecycle and cache cleanup
+  pages/                       Screen composition and workflow actions
+  forms/<workflow>-form/       Form schema, fields and workflow-specific logic
+    transfer-form/attempt.ts   Pure intent helpers and tab-storage boundary
+    transfer-form/useTransferAttempt.ts  Explicit transfer recovery workflow
+  layouts/                     Public authentication shell and signed-in shell
+  components/                  Reused presentation and loading states
+    ui/                        Existing shadcn primitives
+  hooks/useRetryAfter.ts       Shared nonfinancial request cooldown
+  lib/                         Pure money/validation helpers, motion settings, notifications
 ```
 
-A page reads hooks and renders. It does not fetch, and it never holds server data in
-`useState` — that is what the query cache is for. A completed transfer invalidates the wallet
-and the transfer list, and every screen showing either of them updates.
+`apiRequest` handles JSON, bearer headers, cancellation, timeouts, response validation and server errors. Resource hooks own TanStack Query caching and invalidation. Pages do not fetch directly or copy server records into local state. Forms validate with React Hook Form and Zod; the backend still enforces every rule. Query keys include the current user, and changing sessions cancels reads and clears the cache.
 
-## Two things carried over from the server's design
+Pure functions handle money, IDs, validation and intent comparison. Storage, timers, HTTP and React state remain explicit effects. There is no generic repository or workflow framework. Installed framer-motion, react-loading-skeleton, sonner and LoadingButton provide transitions, placeholders and notifications. Motion respects the system's reduced-motion preference. A captured route outlet prevents an exiting transition from remounting the next screen's form.
 
-- **Money is a string of minor units.** `"150000"` is NGN 1,500.00. Arithmetic uses `BigInt`
-  and never `Number`, because a JSON number is a float and a large enough balance stops being
-  exact. `lib/money.ts` converts for display and for input; nothing else formats money.
-- **Every error carries a request ID.** The API returns it in `X-Request-Id` and repeats it in
-  `error.requestId`. The transfer dialog shows it on a failure so a user's report can be traced
-  to a log line.
+## Authentication and errors
 
-## The Idempotency-Key, which is the one subtle thing here
+The API returns a JWT in JSON and has no cookie or refresh endpoint. The session is kept in per-tab sessionStorage, survives reload, and is removed at sign-out or a protected 401. Passwords are never stored. If storage is blocked, login works in memory. Session storage is accessible to JavaScript and is not protection against XSS; an HttpOnly-cookie session would require a backend change. Client role guards control navigation; the backend authorizes requests.
 
-`hooks/useTransferAttempt.ts` holds it, and the rule is one key per set of details the user
-authorised:
+Errors display the server's message, field details and Retry-After where supplied. Request IDs stay on the API error for diagnostics and are not rendered in alerts or toasts. Authentication and admin writes have no automatic retries. Reads retry a server failure once, and do not automatically retry 401 or 429 responses. Public account forms and admin confirmation honor Retry-After with a disabled countdown. Browser access to response headers depends on the API exposing them through CORS.
 
-- Pressing **Confirm** again after a failure **reuses** the key. That is what makes the retry
-  safe — the server recognises it and returns the first outcome instead of moving money twice.
-- **Editing the amount or the recipient discards** it, because that is a different transfer and
-  reusing the key would make the server replay the old one.
+## Money and transfer recovery
 
-Getting it wrong in either direction is a real bug, which is why it lives in one named place
-instead of being spread across the form and the dialog.
+Money and database IDs stay strings across JSON, and money arithmetic uses bigint. Form amounts in naira convert exactly to kobo. The form mirrors the backend's NGN 10 million transfer ceiling, positive BIGINT identifiers and UTF-8 password length limit.
 
-An unconfirmed outcome is not a failure: the server answers `503` when it cannot say whether
-the transfer committed, the key is kept, and the button changes to **Check status** because
-pressing it asks about the same key rather than sending again. A `409` is the opposite — the key
-is already spent on different details and can never succeed, so the only offer is a new
-transfer.
+Reviewing a transfer creates a UUID key. Before sending, its exact source, destination, amount and key are saved under `wallet.transfer:<userId>` in sessionStorage. A network error, server error, invalid success response or expired session leaves that intent unresolved. The user checks it by resending the same key and body; the UI prevents editing it into a different payment. Mutation auto-retries are disabled. A known business rejection permits a new intent and a new key. A 429 keeps the existing key and honors Retry-After. Successful transfers clear the attempt and invalidate wallet and history reads.
 
-## Deployment
+Sending is refused when the attempt cannot be saved. Recovery covers reloads, navigation and re-authentication in the same tab. Closing the tab or clearing browser storage loses that recovery record; history and the server's idempotency ledger remain authoritative. Client state does not provide server concurrency or accounting guarantees.
 
-`npm run build` produces static files in `dist/`, so this deploys as a static site with no Node
-process. `VITE_API_BASE_URL` points at the API, and that origin has to appear in the server's
-`CORS_ORIGINS` or the browser blocks every response — see `docs/deployment.md`.
+## Verification
 
-Vite only exposes variables prefixed `VITE_` to the browser. Anything in `.env` is public once
-the app is built, so no secret belongs there.
+```sh
+npx playwright install chromium
+npm test
+# On Windows, use installed Edge instead if preferred:
+# $env:PLAYWRIGHT_CHANNEL='msedge'; npm test
+```
+
+The 17 checks cover exact large amounts/IDs, password bytes, login/registration, role guards, cursor pagination, receipts, clear errors without internal request IDs, rate limiting, interrupted-transfer recovery, fresh keys after rejection, session expiry, account isolation, admin audit actions and mobile navigation/theme. Browser requests are intercepted with backend-shaped fixtures: these tests verify frontend behavior, not production concurrency or database correctness. Tests use a separate Vite instance on port 3012 and override the API URL, so they never send money to production.
+
+Production smoke verification separately used an existing demo account to read its wallet and display the transfer form. No money or admin changes were submitted.
+
+
+## Public wallet identifiers
+
+Wallet display, copy, recipient entry, confirmation and history use persisted `wlt_` identifiers. The backend retains numeric primary keys for ledger relationships and accepts numeric transfer inputs for compatibility. Public response fields are optional during rollout, so the UI can still read the previous API and replay older saved responses. Existing numeric transfer attempts keep their original body and key. Deploy the backend migration and API to activate public IDs; frontend formatting alone does not create them.

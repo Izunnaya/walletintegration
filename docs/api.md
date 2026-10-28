@@ -193,10 +193,7 @@ Use a fresh UUID per intended transfer. Reuse it on network errors, `500` or `50
 do not generate a new key just because a response was lost. `503` includes
 `Retry-After: 1`. Keys are retained indefinitely for this MVP.
 
-Wallet IDs are positive decimal **strings** within PostgreSQL BIGINT range, just
-like the wallet endpoint's IDs. Numeric IDs are rejected. Amount is a string of
-kobo; currency must be `NGN`. Surrounding whitespace and leading zeros in numeric
-strings normalize before the request fingerprint is calculated.
+Wallet endpoints return `publicId`, a persisted `wlt_` prefix followed by 32 lowercase UUID hex characters. Use this for copying and addressing wallets. `id` remains a decimal string for compatibility. Transfer inputs `sourceWalletId` and `destinationWalletId` accept either public IDs or legacy positive decimal strings within PostgreSQL BIGINT range. JSON numbers are rejected. Public IDs resolve to the existing internal keys before fingerprinting, so switching representations with the same idempotency key replays the same transfer. Amount is a string of kobo; currency must be `NGN`.
 
 Success (`201`):
 
@@ -226,3 +223,6 @@ are not. Business rejections include SAME_WALLET, SYSTEM_WALLET_NOT_TRANSFERABLE
 SENDER_BLOCKED, SENDER_BLACKLISTED, RECIPIENT_BLOCKED, RECIPIENT_BLACKLISTED,
 CURRENCY_MISMATCH, INSUFFICIENT_FUNDS and BALANCE_LIMIT_EXCEEDED. No failed transfer
 or ledger entries are created. After fixing a business rejection, use a new key.
+
+
+Public wallet IDs are also returned as `sourceWalletPublicId` and `destinationWalletPublicId` on new transfer responses and all history/detail reads. Previously saved idempotency responses are replayed unchanged, so those older responses may lack the new fields. Deploy the database migration and backend before expecting public IDs in the UI.

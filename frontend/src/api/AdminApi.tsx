@@ -1,62 +1,44 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { createAccount, fetchUsers, setRestriction } from "./demoWorkspace";
-import { walletKeys } from "./WalletApi";
-import type { WalletUser } from "./types";
+import { useAuth } from "@/auth/AuthProvider";
+import { apiRequest } from "./client";
+import { auditSchema, restrictionSchema } from "./contracts";
 
-export const adminKeys = {
-  users: ["admin", "users"] as const,
-};
-
-export const useUsers = () => {
-  const { data: users, isPending, isError, error } = useQuery({
-    queryKey: adminKeys.users,
-    queryFn: fetchUsers,
+const auditKey = ["admin", "audit"] as const;
+export const useAuditEntries = () => {
+  const { session } = useAuth();
+  const query = useQuery({
+    queryKey: [...auditKey, session?.user.id],
+    queryFn: ({ signal }) =>
+      apiRequest("/admin/audit", auditSchema, {
+        token: session?.token,
+        signal,
+      }),
+    enabled: session?.user.role === "admin",
   });
-
-  return { users: users ?? [], isPending, isError, error };
+  return { ...query, entries: query.data?.entries ?? [] };
 };
-
-type RestrictionRequest = { walletId: string; blocked: boolean; reason: string };
-
 export const useSetRestriction = () => {
+  const { session } = useAuth();
   const queryClient = useQueryClient();
-
-  const { mutateAsync: setUserRestriction, isPending, isError, error, reset } = useMutation<
-    WalletUser,
-    Error,
-    RestrictionRequest
-  >({
-    mutationFn: ({ walletId, blocked, reason }) => setRestriction(walletId, blocked, reason),
+  const mutation = useMutation({
+    mutationFn: ({
+      userId,
+      action,
+      reason,
+    }: {
+      userId: string;
+      action: "block" | "unblock";
+      reason: string;
+    }) =>
+      apiRequest(
+        `/admin/users/${encodeURIComponent(userId)}/${action}`,
+        restrictionSchema,
+        { token: session?.token, body: { reason } },
+      ),
     retry: false,
     onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: adminKeys.users });
-      // Blocking the signed-in wallet changes what the overview is allowed to offer.
-      void queryClient.invalidateQueries({ queryKey: walletKeys.mine });
+      void queryClient.invalidateQueries({ queryKey: auditKey });
     },
   });
-
-  return { setUserRestriction, isPending, isError, error, reset };
-};
-
-type CreateAccountRequest = { name: string; email: string; password: string };
-
-export const useCreateAccount = () => {
-  const queryClient = useQueryClient();
-
-  const { mutateAsync: create, isPending, isError, error, reset } = useMutation<
-    WalletUser,
-    Error,
-    CreateAccountRequest
-  >({
-    // The password is accepted and not forwarded, because the stand-in has nothing to hash
-    // it with and storing it in the browser would be worse than dropping it. When this talks
-    // to /auth/register it goes in the body and never anywhere else.
-    mutationFn: ({ name, email }) => createAccount({ name, email }),
-    retry: false,
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: adminKeys.users });
-    },
-  });
-
-  return { create, isPending, isError, error, reset };
+  return { ...mutation, setRestriction: mutation.mutateAsync };
 };

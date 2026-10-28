@@ -1,6 +1,3 @@
-import { ArrowUpRight } from "lucide-react";
-import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
@@ -9,119 +6,98 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
 import { money } from "@/lib/money";
+import LoadingButton from "@/components/LoadingButton";
+import ApiFeedback from "@/components/ApiFeedback";
 
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  sourceWalletId: string;
+  destinationWalletId: string;
   amountMinor: string;
-  recipientWalletId: string;
-  recipientName?: string;
-  idempotencyKey: string;
-  message: string;
-  requestId?: string;
+  error: unknown;
   unconfirmed: boolean;
-  conflicted: boolean;
+  rejected: boolean;
   retryAfter: number;
   isPending: boolean;
   onConfirm: () => void;
   onStartOver: () => void;
 };
-
-// The last step before money moves, so it states the details rather than summarising them:
-// the amount, the recipient's wallet ID in full, and the key this attempt will carry.
-//
-// The button's label is the interesting part. It says "Confirm transfer" normally, "Check
-// status" when the outcome was never confirmed - because pressing it asks about the same key
-// rather than sending again - and counts down while rate limited.
 const TransferConfirmDialog = ({
   open,
   onOpenChange,
+  sourceWalletId,
+  destinationWalletId,
   amountMinor,
-  recipientWalletId,
-  recipientName,
-  idempotencyKey,
-  message,
-  requestId,
+  error,
   unconfirmed,
-  conflicted,
+  rejected,
   retryAfter,
   isPending,
   onConfirm,
   onStartOver,
-}: Props) => {
-  const label = () => {
-    if (isPending) return "Checking…";
-    if (retryAfter > 0) return `Retry in ${retryAfter}s`;
-    if (unconfirmed) return "Check status";
-    return "Confirm transfer";
-  };
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        // Closing mid-request would hide the outcome of something already sent.
-        if (!isPending) onOpenChange(next);
-      }}
-    >
-      <DialogContent showCloseButton={!isPending}>
-        <DialogHeader>
-          <DialogTitle>
-            {unconfirmed ? "Awaiting confirmation" : "Review your transfer"}
-          </DialogTitle>
-          <DialogDescription>Check these details before sending.</DialogDescription>
-        </DialogHeader>
-
-        <div className="my-4 flex flex-col gap-4">
-          <p className="text-3xl font-semibold tracking-tight">{money(amountMinor)}</p>
-
-          <div className="flex justify-between text-xs">
-            <span className="text-muted-foreground">To</span>
-            <span>{recipientName ?? "Unknown recipient"}</span>
-          </div>
-
-          <code className="break-all rounded-md bg-muted p-3 text-xs">{recipientWalletId}</code>
-
-          <div className="flex justify-between text-xs">
-            <span className="text-muted-foreground">Transfer fee</span>
-            <span>₦0.00</span>
-          </div>
-
-          {/* Shown because it is the thing that makes a retry safe, and a reviewer should be
-              able to see it staying the same across one. */}
-          <p className="break-all text-[10px] text-muted-foreground">
-            Idempotency-Key: {idempotencyKey}
-          </p>
-
-          {message && (
-            <Alert variant={unconfirmed ? "default" : "destructive"}>
-              <AlertDescription>
-                <p>{message}</p>
-                {requestId && (
-                  <p className="mt-2 break-all text-[10px]">Request ID: {requestId}</p>
-                )}
-              </AlertDescription>
-            </Alert>
-          )}
+}: Props) => (
+  <Dialog
+    open={open}
+    onOpenChange={(next) => {
+      if (!isPending) onOpenChange(next);
+    }}
+  >
+    <DialogContent showCloseButton={!isPending}>
+      <DialogHeader>
+        <DialogTitle>
+          {unconfirmed
+            ? "Check your transfer"
+            : rejected
+              ? "Transfer rejected"
+              : "Review your transfer"}
+        </DialogTitle>
+        <DialogDescription>
+          {unconfirmed
+            ? "The outcome is not confirmed. Check this transfer before starting another."
+            : "Check the wallet IDs and amount before confirming."}
+        </DialogDescription>
+      </DialogHeader>
+      <p className="my-3 text-3xl font-semibold">{money(amountMinor)}</p>
+      <dl className="space-y-3 text-sm">
+        <div className="flex justify-between gap-3">
+          <dt>From wallet</dt>
+          <dd className="break-all font-mono">{sourceWalletId}</dd>
         </div>
-
-        <DialogFooter>
-          <Button variant="outline" disabled={isPending} onClick={() => onOpenChange(false)}>
-            Go back
-          </Button>
-          {conflicted ? (
-            <Button onClick={onStartOver}>Start a new transfer</Button>
-          ) : (
-            <Button disabled={isPending || retryAfter > 0} onClick={onConfirm}>
-              {label()}
-              <ArrowUpRight />
-            </Button>
-          )}
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-};
-
+        <div className="flex justify-between gap-3">
+          <dt>To wallet</dt>
+          <dd className="break-all font-mono">{destinationWalletId}</dd>
+        </div>
+      </dl>
+      <ApiFeedback error={error} />
+      <DialogFooter>
+        <Button
+          variant="outline"
+          disabled={isPending}
+          onClick={() => onOpenChange(false)}
+        >
+          Close
+        </Button>
+        {rejected ? (
+          <Button onClick={onStartOver}>Start a new transfer</Button>
+        ) : (
+          <LoadingButton
+            loading={isPending}
+            loadingLabel="Checking..."
+            disabled={retryAfter > 0}
+            onClick={onConfirm}
+          >
+            {retryAfter > 0
+              ? `Retry in ${retryAfter}s`
+              : unconfirmed
+                ? "Check transfer status"
+                : "Confirm transfer"}
+          </LoadingButton>
+        )}
+      </DialogFooter>
+    </DialogContent>
+  </Dialog>
+);
 export default TransferConfirmDialog;

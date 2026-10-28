@@ -871,3 +871,34 @@ pino's own methods and `src/logger.ts` holds configuration only.
 
 Every question raised during the build has been answered. [OPEN-QUESTIONS.md](OPEN-QUESTIONS.md)
 is empty, and stays in the repository because the next question goes there first.
+
+
+## Frontend API alignment and workflow structure (2026-10-28)
+
+**Decision:** follow the Restaurant frontend's screen/API/form separation while using this service's real bearer-token contract. Keep installed motion, skeleton and toast libraries. Avoid generic repositories and workflow frameworks. Pure helpers handle exact money, IDs, validation and intent comparison.
+
+**API coverage:** public registration and login, own wallet, transfer creation/history/detail, administrator block/unblock with reasons, audit log and health status. Remove UI that requires missing APIs rather than fabricate data. Admin access uses user IDs; payments use wallet IDs. Reconciliation and seeding stay CLI operations.
+
+**Session:** use per-tab sessionStorage because the existing API returns JWT JSON and exposes no cookie/refresh route. Clear the private query cache on session changes, and expire only the token matching a protected 401. This survives reload but remains JavaScript-readable; HttpOnly cookies require backend work. UI guards do not replace server authorization.
+
+**Transfer safety:** persist the exact intent and key before sending, disable automatic mutation retries, reuse the same intent after uncertain failures and honor Retry-After. A known rejection permits a new key. Keep unresolved attempts scoped to their original user. Refuse sending if saving fails. Closing the tab or clearing storage loses local recovery; the server ledger remains authoritative. Do not claim that client checks establish production concurrency guarantees.
+
+**Validation:** Zod infers response types and mirrors backend input limits; amounts and IDs remain strings and bigint preserves precision. Upgrade Zod to the patched 4.x release after the dependency audit flagged the old release. Runtime audit reports no known advisories.
+
+**Verification:** 15 checks cover precision, validation and browser workflows with API-shaped fixtures. Separately smoke-check deployed login, wallet reads and transfer-form rendering without submitting production transfers or admin changes. Full structure, commands and tradeoffs are documented in [frontend/README.md](frontend/README.md).
+
+
+### User-facing error messages (2026-10-28)
+
+Login failures explain the problem without displaying internal request IDs. The same rule applies to shared error alerts and toasts. Request IDs remain in the API error and backend logs for tracing; they are diagnostic metadata rather than instructions for the user. Browser regression checks cover failed login and read errors, including successful retry.
+
+Password guidance recommends a mix of uppercase and lowercase letters, numbers and symbols. The bcrypt byte limit stays an internal validation detail; an overlong password gets a plain-language error. This copy does not introduce new character requirements that the backend does not enforce.
+
+
+## Public wallet IDs (2026-10-28)
+
+Each wallet has a persisted public ID: `wlt_` followed by 32 lowercase UUID hex characters. PostgreSQL generates and uniquely indexes it, including a backfill for existing wallets. The existing numeric primary keys and all ledger/transfer foreign keys remain in place. Wallet responses add `publicId`; transfer responses add `sourceWalletPublicId` and `destinationWalletPublicId`. These are the identifiers displayed and copied by the UI.
+
+Transfer inputs accept both public and legacy numeric strings. Public IDs resolve to internal keys before fingerprinting and locking, so concurrent requests using either representation share the same idempotency record. The existing ownership checks, lock order and ledger transaction apply after resolution. Previously stored responses and tab-local transfer attempts remain replayable without rewriting their keys or payloads. The full UUID is retained to avoid truncating its randomness.
+
+The migration is additive and safe to rerun. Testing exposed the baseline migration's explicit COMMIT ending the test harness transaction and resetting its search path. Test helpers now remove migration transaction wrappers and keep the entire migration sequence within their own transaction. The initial run added the public-ID column to the configured database and created two empty test accounts; those exact accounts were verified empty and removed. The additive column was retained, and deployment can adopt it without regenerating identifiers.

@@ -67,7 +67,7 @@ async function account(balance = 1000n) {
       await client.wallet.update({ where: { id: systemId }, data: { balanceMinor: { decrement: balance } } });
       await client.wallet.update({ where: { id: wallet.id }, data: { balanceMinor: balance } });
     }
-    return { userId: user.id, walletId: wallet.id, email: user.email, token: issueToken({ userId: user.id, role: "customer" }) };
+    return { userId: user.id, walletId: wallet.id, publicId: wallet.publicId, email: user.email, token: issueToken({ userId: user.id, role: "customer" }) };
   });
 }
 type Account = Awaited<ReturnType<typeof account>>;
@@ -99,6 +99,27 @@ async function waitForBlockedQuery(blockerPid: number) {
 }
 
 describe("atomic, idempotent transfers over HTTP", () => {
+  it("public IDs resolve to existing wallets and share idempotency with numeric IDs", async () => {
+    const source = await account(); const destination = await account(0n); const key = randomUUID();
+    expect(source.publicId).toMatch(/^wlt_[0-9a-f]{32}$/);
+    const numeric = await send(source.token, body(source, destination), key);
+    expect(numeric.status).toBe(201);
+    const request = { ...body(source, destination), sourceWalletId: source.publicId, destinationWalletId: destination.publicId };
+    const replay = await send(source.token, request, key);
+    expect(replay.body).toEqual(numeric.body);
+    expect(replay.body.transfer).toMatchObject({ sourceWalletPublicId: source.publicId, destinationWalletPublicId: destination.publicId });
+    expect(await balance(source)).toBe(900n);
+    expect(await balance(destination)).toBe(100n);
+    const history = await fetch(`${baseUrl}/transfers`, { headers: { Authorization: `Bearer ${source.token}` } });
+    expect((await history.json()).transfers[0]).toMatchObject({ sourceWalletPublicId: source.publicId, destinationWalletPublicId: destination.publicId });
+    const detail = await fetch(`${baseUrl}/transfers/${numeric.body.transfer.id}`, { headers: { Authorization: `Bearer ${source.token}` } });
+    expect((await detail.json()).transfer.sourceWalletPublicId).toBe(source.publicId);
+    expect((await send(destination.token, request)).status).toBe(403);
+    expect((await send(source.token, { ...request, destinationWalletId: `wlt_${"0".repeat(32)}` })).status).toBe(404);
+    expect((await send(source.token, { ...request, destinationWalletId: "wlt_invalid" })).status).toBe(400);
+    await assertBooksBalance();
+  });
+
   it("moves money once, writes an equal ledger pair and replays a lost response", async () => {
     const source = await account(); const destination = await account(0n); const key = randomUUID();
     const first = await send(source.token, body(source, destination), key);
@@ -128,7 +149,7 @@ describe("atomic, idempotent transfers over HTTP", () => {
 
   it("concurrent duplicate keys create exactly one transfer and one ledger pair", async () => {
     const source = await account(); const destination = await account(0n); const key = randomUUID();
-    const responses = await Promise.all(Array.from({ length: 4 }, () => send(source.token, body(source, destination), key)));
+    const responses = await Promise.all(Array.from({ length: 4 }, (_, index) => send(source.token, index % 2 ? { ...body(source, destination), sourceWalletId: source.publicId, destinationWalletId: destination.publicId } : body(source, destination), key)));
     for (let response of responses) {
       if (response.status === 503) response = await send(source.token, body(source, destination), key);
       expect(response.status).toBe(201);

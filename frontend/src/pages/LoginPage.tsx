@@ -1,70 +1,79 @@
-import { Link, useSearchParams } from "react-router-dom";
-import { Wallet } from "lucide-react";
+import { useRetryAfter } from "@/hooks/useRetryAfter";
+import {
+  Link,
+  useLocation,
+  useNavigate,
+  useSearchParams,
+} from "react-router-dom";
+import { useAuth } from "@/auth/AuthProvider";
+import { useLogin } from "@/api/AuthApi";
+import ApiFeedback from "@/components/ApiFeedback";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Button, buttonVariants } from "@/components/ui/button";
-import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
+import LoginForm from "@/forms/login-form/LoginForm";
+import type { LoginFormData } from "@/forms/login-form/LoginForm";
+import { SlowRequestNotice } from "@/components/LoadingStates";
 
-// Deliberately not wired, and the button says so rather than pretending.
-//
-// Signing in needs the token to be stored and attached to every request, and a token in the
-// wrong place is the kind of mistake that is hard to walk back. It belongs with the API
-// wiring, in the phase that adds it, not as a form that looks real and does nothing.
-//
-// ?expired=1 is how useTransferAttempt sends someone here after a 401, so the reason they
-// were interrupted is on screen instead of them arriving at a blank login.
 const LoginPage = () => {
+  const { login, isPending, error } = useLogin();
+  const { signIn } = useAuth();
+  const navigate = useNavigate();
+  const retryAfter = useRetryAfter(error);
+  const location = useLocation();
   const [params] = useSearchParams();
-  const expired = params.get("expired") === "1";
-
+  const onSave = async (data: LoginFormData) => {
+    if (retryAfter > 0) return;
+    try {
+      signIn(await login(data));
+      const requested: unknown = location.state?.from;
+      const destination =
+        typeof requested === "string" &&
+        requested.startsWith("/") &&
+        !requested.startsWith("//")
+          ? requested
+          : "/";
+      navigate(destination, { replace: true });
+    } catch {
+      /* The mutation error is rendered below. */
+    }
+  };
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background p-6 text-foreground">
-      <section className="w-full max-w-sm">
-        <Wallet className="mb-8 size-9" />
-        <h1 className="text-3xl font-semibold tracking-tight">Welcome back.</h1>
-        <p className="mb-8 mt-2 text-sm text-muted-foreground">
-          A clearer view of your money.
-        </p>
-
-        {expired && (
-          <Alert className="mb-5">
-            <AlertDescription>
-              Your session expired, so the transfer was not sent. Sign in and try again.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        <form onSubmit={(event) => event.preventDefault()}>
-          <FieldGroup>
-            <Field>
-              <FieldLabel htmlFor="login-email">Email</FieldLabel>
-              <Input
-                id="login-email"
-                type="email"
-                autoComplete="email"
-                placeholder="you@example.com"
-              />
-            </Field>
-            <Field>
-              <FieldLabel htmlFor="login-password">Password</FieldLabel>
-              <Input id="login-password" type="password" autoComplete="current-password" />
-            </Field>
-
-            <Button disabled type="submit">
-              Sign in — not connected yet
-            </Button>
-            <p className="text-xs leading-relaxed text-muted-foreground">
-              No credentials are sent or stored. Authentication arrives with the API wiring.
-            </p>
-
-            <Link to="/" className={buttonVariants({ variant: "outline" })}>
-              Return to the demo workspace
-            </Link>
-          </FieldGroup>
-        </form>
-      </section>
-    </main>
+    <>
+      <h1 className="text-3xl font-semibold tracking-tight">Welcome back.</h1>
+      <p className="mb-7 mt-2 text-sm text-muted-foreground">
+        Sign in to your wallet.
+      </p>
+      {params.get("expired") === "1" && (
+        <Alert className="mb-5">
+          <AlertDescription>
+            Your session expired. Sign in again to continue. Any unresolved
+            transfer can be checked with its original request.
+          </AlertDescription>
+        </Alert>
+      )}
+      {params.get("registered") === "1" && (
+        <Alert className="mb-5">
+          <AlertDescription>
+            Your account and wallet are ready. Sign in to continue.
+          </AlertDescription>
+        </Alert>
+      )}
+      <div className="mb-5">
+        <ApiFeedback error={error} />
+      </div>
+      {isPending && <SlowRequestNotice />}
+      <LoginForm
+        email={params.get("email") ?? ""}
+        isLoading={isPending}
+        retryAfter={retryAfter}
+        onSave={onSave}
+      />
+      <p className="mt-6 text-sm text-muted-foreground">
+        New here?{" "}
+        <Link className="underline text-foreground" to="/register">
+          Create an account
+        </Link>
+      </p>
+    </>
   );
 };
-
 export default LoginPage;

@@ -1,44 +1,28 @@
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { Plus } from "lucide-react";
+import { emailSchema, registrationPasswordSchema } from "@/lib/validation";
 import { Input } from "@/components/ui/input";
-import { Field, FieldDescription, FieldGroup, FieldLabel } from "@/components/ui/field";
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@/components/ui/field";
 import LoadingButton from "@/components/LoadingButton";
 
-// The password rules are the server's, and the two unobvious ones are deliberate.
-//
-// The minimum counts characters after trimming, because twelve spaces is not a password -
-// the API rejects it for the same reason. The maximum is in BYTES, not characters, because
-// bcrypt reads only the first 72 and silently ignores the rest: a longer value would appear
-// to be accepted while most of it was never part of the hash. The value itself is never
-// trimmed; only its length is measured that way.
 const createAccountSchema = z.object({
-  name: z
-    .string()
-    .trim()
-    .min(1, "Enter a name.")
-    .max(100, "A name can be at most 100 characters."),
-
-  email: z.string().trim().min(1, "Enter an email address.").email("Enter a valid email address."),
-
-  password: z
-    .string()
-    .refine((value) => value.trim().length >= 12, "Use at least 12 characters that are not spaces.")
-    .refine(
-      (value) => new TextEncoder().encode(value).length <= 72,
-      "That is longer than 72 bytes, which is all bcrypt reads.",
-    ),
+  name: z.string().trim().min(1, "Enter your name.").max(120),
+  email: emailSchema,
+  password: registrationPasswordSchema,
 });
-
 export type CreateAccountFormData = z.infer<typeof createAccountSchema>;
-
 type Props = {
-  isSubmitting: boolean;
-  onSubmit: (data: CreateAccountFormData) => void;
+  isLoading: boolean;
+  retryAfter: number;
+  onSave: (data: CreateAccountFormData) => Promise<void>;
 };
-
-const CreateAccountForm = ({ isSubmitting, onSubmit }: Props) => {
+const CreateAccountForm = ({ isLoading, retryAfter, onSave }: Props) => {
   const {
     register,
     handleSubmit,
@@ -46,64 +30,65 @@ const CreateAccountForm = ({ isSubmitting, onSubmit }: Props) => {
   } = useForm<CreateAccountFormData>({
     resolver: zodResolver(createAccountSchema),
     defaultValues: { name: "", email: "", password: "" },
-    mode: "onBlur",
   });
-
   return (
-    <form onSubmit={handleSubmit(onSubmit)} noValidate>
+    <form onSubmit={handleSubmit(onSave)} noValidate>
       <FieldGroup>
-        <Field data-invalid={Boolean(errors.name)}>
-          <FieldLabel htmlFor="name">Full name</FieldLabel>
+        <Field>
+          <FieldLabel htmlFor="register-name">Name</FieldLabel>
           <Input
-            id="name"
-            placeholder="e.g. Jamie Taylor"
-            aria-invalid={Boolean(errors.name)}
+            id="register-name"
+            autoComplete="name"
             {...register("name")}
+            aria-invalid={!!errors.name}
           />
           {errors.name && (
-            <FieldDescription className="text-destructive">{errors.name.message}</FieldDescription>
+            <FieldDescription className="text-destructive">
+              {errors.name.message}
+            </FieldDescription>
           )}
         </Field>
-
-        <Field data-invalid={Boolean(errors.email)}>
-          <FieldLabel htmlFor="email">Email address</FieldLabel>
+        <Field>
+          <FieldLabel htmlFor="register-email">Email</FieldLabel>
           <Input
-            id="email"
+            id="register-email"
             type="email"
-            placeholder="jamie@example.com"
-            aria-invalid={Boolean(errors.email)}
+            autoComplete="username"
             {...register("email")}
+            aria-invalid={!!errors.email}
           />
           {errors.email && (
-            <FieldDescription className="text-destructive">{errors.email.message}</FieldDescription>
+            <FieldDescription className="text-destructive">
+              {errors.email.message}
+            </FieldDescription>
           )}
         </Field>
-
-        <Field data-invalid={Boolean(errors.password)}>
-          <FieldLabel htmlFor="password">Password</FieldLabel>
+        <Field>
+          <FieldLabel htmlFor="register-password">Password</FieldLabel>
           <Input
-            id="password"
+            id="register-password"
             type="password"
             autoComplete="new-password"
-            aria-invalid={Boolean(errors.password)}
             {...register("password")}
+            aria-invalid={!!errors.password}
           />
-          {errors.password ? (
-            <FieldDescription className="text-destructive">
-              {errors.password.message}
-            </FieldDescription>
-          ) : (
-            <FieldDescription>New wallets start at ₦0.00.</FieldDescription>
-          )}
+          <FieldDescription
+            className={errors.password ? "text-destructive" : ""}
+          >
+            {errors.password?.message ??
+              "For a strong password, mix uppercase and lowercase letters, numbers and symbols."}
+          </FieldDescription>
         </Field>
-
-        <LoadingButton type="submit" loading={isSubmitting} loadingLabel="Creating account…">
-          Create account
-          <Plus />
+        <LoadingButton
+          type="submit"
+          loading={isLoading}
+          disabled={retryAfter > 0}
+          loadingLabel="Creating account..."
+        >
+          {retryAfter > 0 ? `Retry in ${retryAfter}s` : "Create account"}
         </LoadingButton>
       </FieldGroup>
     </form>
   );
 };
-
 export default CreateAccountForm;
