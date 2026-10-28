@@ -8,7 +8,7 @@ Closed system. No banks, no payment providers, no queues. Every transfer
 completes inside one PostgreSQL transaction, which is why there is nothing to
 wait on and no event system.
 
-**Live:** not deployed yet.
+**Live:** https://walletintegration-6t6r.onrender.com
 
 ## The invariants
 
@@ -42,8 +42,10 @@ migrations; Zod validates requests. Transfers claim an idempotency key, lock use
 and wallets, check restrictions, and commit the debit, credit, ledger pair and
 stored response together.
 
-Next: transfer history, audited admin block/unblock, rate limits, reconciliation,
-and deployed verification. There is no live deployment established by this repo.
+Transfer history, audited admin block/unblock, rate limits, structured logging and
+the reconciliation command are also implemented. The API is deployed on Render.
+The [production audit](docs/production-audit-2026-10-28.md) records verified behavior,
+security fixes awaiting deployment, and the remaining proxy configuration check.
 [WALKTHROUGH.md](WALKTHROUGH.md) explains the request flow and
 [DECISIONS.md](DECISIONS.md) records the tradeoffs.
 
@@ -159,7 +161,7 @@ nothing in the frontend folder.
 | [docs/domain.md](docs/domain.md) | What a wallet, transfer and ledger entry are; the rules on money; known versus unknown failures |
 | [docs/api.md](docs/api.md) | Every endpoint: success shapes, the error shape, and which status code means what |
 | [DECISIONS.md](DECISIONS.md) | Every settled decision, with the reasoning, what was ruled out, and whether it can be undone |
-| [OPEN-QUESTIONS.md](OPEN-QUESTIONS.md) | Empty: every question has been answered, with the options and what each costs |
+| [OPEN-QUESTIONS.md](OPEN-QUESTIONS.md) | Outstanding deployment decisions, including Q32 proxy attribution |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | How to make and land a change |
 | [server/README.md](server/README.md) | API detail: commands, environment, structure, and what has actually been verified |
 | [WALKTHROUGH.md](WALKTHROUGH.md) | A file-by-file walk through the implementation, written to be explained out loud |
@@ -215,3 +217,24 @@ part of the financial design. Q13 supersedes the original pg-only decision.
 Read [docs/prisma.md](docs/prisma.md) before migrating an existing database.
 Client generation is automatic on install/build; seeding is explicit. Existing
 application data is preserved through verified baselining, never a reset.
+
+
+## Production hardening configuration
+
+Use TRUST_PROXY_HOPS=0 for direct local access. On Render explicitly set the verified
+proxy count using a real request's ingress logs. The app refuses to guess the count
+on Render. The known live auth-IP quota issue remains open until configuration and
+post-deploy checks confirm it is fixed.
+
+Limits per minute: 20 auth requests per normalized IP/subnet, 10 login attempts per
+normalized email, 60 transfer requests per authenticated user, 240 shared wallet/
+history reads per user, and 30 admin requests per user. Successful login attempts
+also count toward the account allowance to bound bcrypt work. Quotas are held in
+one process; use a shared store before adding replicas. Honor Retry-After on 429
+and 503. Every transfer retry must retain its original Idempotency-Key.
+
+`npm run audit:production` runs the bounded live audit described in the report;
+`AUDIT_BASE_URL`, `AUDIT_REPORT_PATH`, `AUDIT_FUNDER_EMAIL` and
+`AUDIT_FUNDER_PASSWORD` override its target/report/demo funding credentials.
+The report never contains passwords or bearer tokens. Avoid pointing ordinary
+schema/seed tests at the deployed application's database.
