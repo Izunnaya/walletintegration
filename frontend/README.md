@@ -74,6 +74,11 @@ npm test
 # $env:PLAYWRIGHT_CHANNEL='msedge'; npm test
 ```
 
-The 16 checks cover exact large amounts/IDs, password bytes, login/registration, role guards, cursor pagination, receipts, clear errors without internal request IDs, rate limiting, interrupted-transfer recovery, fresh keys after rejection, session expiry, account isolation, admin audit actions and mobile navigation/theme. Browser requests are intercepted with backend-shaped fixtures: these tests verify frontend behavior, not production concurrency or database correctness. Tests use a separate Vite instance on port 3012 and override the API URL, so they never send money to production.
+The 17 checks cover exact large amounts/IDs, password bytes, login/registration, role guards, cursor pagination, receipts, clear errors without internal request IDs, rate limiting, interrupted-transfer recovery, fresh keys after rejection, session expiry, account isolation, admin audit actions and mobile navigation/theme. Browser requests are intercepted with backend-shaped fixtures: these tests verify frontend behavior, not production concurrency or database correctness. Tests use a separate Vite instance on port 3012 and override the API URL, so they never send money to production.
 
 Production smoke verification separately used an existing demo account to read its wallet and display the transfer form. No money or admin changes were submitted.
+
+
+## Public wallet identifiers
+
+Wallet display, copy, recipient entry, confirmation and history use persisted `wlt_` identifiers. The backend retains numeric primary keys for ledger relationships and accepts numeric transfer inputs for compatibility. Public response fields are optional during rollout, so the UI can still read the previous API and replay older saved responses. Existing numeric transfer attempts keep their original body and key. Deploy the backend migration and API to activate public IDs; frontend formatting alone does not create them.

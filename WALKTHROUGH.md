@@ -435,3 +435,12 @@ Unsupported demo features were removed: no role switcher, fake account directory
 Login failures explain the problem without displaying internal request IDs. The same rule applies to shared error alerts and toasts. Request IDs remain in the API error and backend logs for tracing; they are diagnostic metadata rather than instructions for the user. Browser regression checks cover failed login and read errors, including successful retry.
 
 Password guidance recommends a mix of uppercase and lowercase letters, numbers and symbols. The bcrypt byte limit stays an internal validation detail; an overlong password gets a plain-language error. This copy does not introduce new character requirements that the backend does not enforce.
+
+
+## Public wallet IDs (2026-10-28)
+
+Each wallet has a persisted public ID: `wlt_` followed by 32 lowercase UUID hex characters. PostgreSQL generates and uniquely indexes it, including a backfill for existing wallets. The existing numeric primary keys and all ledger/transfer foreign keys remain in place. Wallet responses add `publicId`; transfer responses add `sourceWalletPublicId` and `destinationWalletPublicId`. These are the identifiers displayed and copied by the UI.
+
+Transfer inputs accept both public and legacy numeric strings. Public IDs resolve to internal keys before fingerprinting and locking, so concurrent requests using either representation share the same idempotency record. The existing ownership checks, lock order and ledger transaction apply after resolution. Previously stored responses and tab-local transfer attempts remain replayable without rewriting their keys or payloads. The full UUID is retained to avoid truncating its randomness.
+
+The migration is additive and safe to rerun. Testing exposed the baseline migration's explicit COMMIT ending the test harness transaction and resetting its search path. Test helpers now remove migration transaction wrappers and keep the entire migration sequence within their own transaction. The initial run added the public-ID column to the configured database and created two empty test accounts; those exact accounts were verified empty and removed. The additive column was retained, and deployment can adopt it without regenerating identifiers.
