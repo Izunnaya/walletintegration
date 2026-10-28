@@ -19,8 +19,8 @@ export async function lockTransferParties(client: Prisma.TransactionClient, wall
     SELECT id, email, is_blocked AS "isBlocked" FROM ${namespace}.users
     WHERE id IN (${Prisma.join(userIds)}) ORDER BY id FOR NO KEY UPDATE
   `;
-  const wallets = await client.$queryRaw<WalletState[]>`
-    SELECT id, owner_id AS "ownerId", currency, balance_minor AS "balanceMinor", is_system AS "isSystem"
+  const wallets = await client.$queryRaw<(WalletState & { publicId: string })[]>`
+    SELECT id, public_id AS "publicId", owner_id AS "ownerId", currency, balance_minor AS "balanceMinor", is_system AS "isSystem"
     FROM ${namespace}.wallets WHERE id IN (${Prisma.join(walletIds)}) ORDER BY id FOR UPDATE
   `;
   return { users, wallets };

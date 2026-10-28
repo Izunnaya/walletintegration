@@ -46,7 +46,7 @@ describe("auth HTTP flows with PostgreSQL", () => {
     expect(response.status).toBe(201);
     expect(await response.json()).toMatchObject({
       user: { email: "new@example.com", name: "New User", role: "customer" },
-      wallet: { currency: "NGN", balanceMinor: "0" },
+      wallet: { currency: "NGN", balanceMinor: "0", publicId: expect.stringMatching(/^wlt_[0-9a-f]{32}$/) },
     });
     const user = await authPrisma.user.findUniqueOrThrow({ where: { email: "new@example.com" }, include: { wallets: true } });
     expect(user.wallets).toHaveLength(1);
@@ -56,7 +56,7 @@ describe("auth HTTP flows with PostgreSQL", () => {
     const session = await login.json();
     const wallet = await fetch(`${baseUrl}/wallets/me`, { headers: { Authorization: `Bearer ${session.token}` } });
     expect(wallet.status).toBe(200);
-    expect(await wallet.json()).toMatchObject({ id: user.wallets[0]?.id.toString(), balanceMinor: "0" });
+    expect(await wallet.json()).toMatchObject({ id: user.wallets[0]?.id.toString(), publicId: user.wallets[0]?.publicId, balanceMinor: "0" });
   });
 
   it("rejects normalized blacklist matches and privileged fields without creating users", async () => {
