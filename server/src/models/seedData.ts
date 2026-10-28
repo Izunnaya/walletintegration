@@ -14,7 +14,20 @@ export const DEMO_CUSTOMER_PASSWORD = "demo-password-2026";
 export const DEFAULT_LOCAL_ADMIN_PASSWORD = "admin-password-2026";
 
 function adminPassword(): string {
-  return process.env.SEED_ADMIN_PASSWORD ?? DEFAULT_LOCAL_ADMIN_PASSWORD;
+  const configured = process.env.SEED_ADMIN_PASSWORD;
+
+  if (configured === undefined) {
+    const host = new URL(process.env.DATABASE_URL ?? "postgres://localhost").hostname;
+    if (!["localhost", "127.0.0.1", "[::1]"].includes(host)) {
+      throw new Error("SEED_ADMIN_PASSWORD is required when seeding a non-local database.");
+    }
+    return DEFAULT_LOCAL_ADMIN_PASSWORD;
+  }
+
+  if (configured.length === 0 || Buffer.byteLength(configured, "utf8") > 72) {
+    throw new Error("SEED_ADMIN_PASSWORD must be non-empty and at most 72 UTF-8 bytes.");
+  }
+  return configured;
 }
 
 type DemoCustomer = {
