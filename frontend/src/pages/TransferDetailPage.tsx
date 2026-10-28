@@ -1,6 +1,6 @@
 import { useNavigate, useParams } from "react-router-dom";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import PendingPanels from "@/components/PendingPanels";
+import { ReceiptSkeleton, SlowRequestNotice } from "@/components/LoadingStates";
 import TransferReceipt from "@/components/TransferReceipt";
 import { useTransfer } from "@/api/TransferApi";
 
@@ -12,7 +12,14 @@ const TransferDetailPage = () => {
   const { transfer, isPending, isError, error } = useTransfer(id);
   const navigate = useNavigate();
 
-  if (isPending) return <PendingPanels label="Loading transfer" />;
+  if (isPending) {
+    return (
+      <div aria-busy="true">
+        <SlowRequestNotice />
+        <ReceiptSkeleton />
+      </div>
+    );
+  }
 
   if (isError || !transfer) {
     return (

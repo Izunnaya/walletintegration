@@ -2,7 +2,7 @@ import { useState } from "react";
 import { ArrowUpRight, ShieldCheck } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import PageHeading from "@/components/PageHeading";
-import PendingPanels from "@/components/PendingPanels";
+import { FormSkeleton, SlowRequestNotice } from "@/components/LoadingStates";
 import TransferConfirmDialog from "@/components/TransferConfirmDialog";
 import TransferReceipt from "@/components/TransferReceipt";
 import TransferForm from "@/forms/transfer-form/TransferForm";
@@ -42,7 +42,16 @@ const TransferPage = () => {
     dismissResult,
   } = useTransferAttempt();
 
-  if (walletPending) return <PendingPanels label="Loading wallet" />;
+  if (walletPending) {
+    return (
+      <div aria-busy="true">
+        <SlowRequestNotice />
+        <div className="max-w-xl rounded-xl border p-6">
+          <FormSkeleton fields={4} />
+        </div>
+      </div>
+    );
+  }
   if (!wallet) {
     return (
       <Alert variant="destructive">

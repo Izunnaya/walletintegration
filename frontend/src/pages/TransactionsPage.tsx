@@ -1,13 +1,20 @@
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import PageHeading from "@/components/PageHeading";
-import PendingPanels from "@/components/PendingPanels";
+import { SlowRequestNotice, TransactionsTableSkeleton } from "@/components/LoadingStates";
 import TransactionsTable from "@/components/TransactionsTable";
 import { useTransfers } from "@/api/TransferApi";
 
 const TransactionsPage = () => {
   const { transfers, isPending, isError, error } = useTransfers();
 
-  if (isPending) return <PendingPanels label="Loading transactions" />;
+  if (isPending) {
+    return (
+      <div aria-busy="true">
+        <SlowRequestNotice />
+        <TransactionsTableSkeleton rows={6} />
+      </div>
+    );
+  }
 
   if (isError) {
     return (

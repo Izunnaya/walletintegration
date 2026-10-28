@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Search } from "lucide-react";
-import { toast } from "sonner";
+import { notify } from "@/lib/notify";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import {
@@ -23,10 +23,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import PageHeading from "@/components/PageHeading";
-import PendingPanels from "@/components/PendingPanels";
+import { SlowRequestNotice, UsersTableSkeleton } from "@/components/LoadingStates";
 import StatusBadge from "@/components/StatusBadge";
 import { useSetRestriction, useUsers } from "@/api/AdminApi";
-import { ApiError } from "@/api/types";
 import type { WalletUser } from "@/api/types";
 
 const UserManagementPage = () => {
@@ -37,7 +36,14 @@ const UserManagementPage = () => {
   const [managing, setManaging] = useState<WalletUser | null>(null);
   const [reason, setReason] = useState("");
 
-  if (isPending) return <PendingPanels label="Loading users" />;
+  if (isPending) {
+    return (
+      <div aria-busy="true">
+        <SlowRequestNotice />
+        <UsersTableSkeleton />
+      </div>
+    );
+  }
 
   if (isError) {
     return (
@@ -61,13 +67,15 @@ const UserManagementPage = () => {
         blocked: managing.status !== "blocked",
         reason,
       });
-      toast.success(managing.status === "blocked" ? "User unblocked" : "User blocked");
+      // Named, because "User blocked" without saying who is useless in a list of five.
+      notify.success(
+        managing.status === "blocked" ? `${managing.name} unblocked` : `${managing.name} blocked`,
+        "The reason has been recorded against the wallet.",
+      );
       setManaging(null);
       setReason("");
     } catch (caught) {
-      toast.error(
-        caught instanceof ApiError ? caught.message : "That change could not be saved.",
-      );
+      notify.error(caught, "That change could not be saved.");
     }
   };
 

@@ -5,7 +5,11 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import BalanceCard from "@/components/BalanceCard";
 import PageHeading from "@/components/PageHeading";
-import PendingPanels from "@/components/PendingPanels";
+import {
+  BalanceCardSkeleton,
+  SlowRequestNotice,
+  TransactionsTableSkeleton,
+} from "@/components/LoadingStates";
 import TransactionsTable from "@/components/TransactionsTable";
 import { useMyWallet } from "@/api/WalletApi";
 import { useTransfers } from "@/api/TransferApi";
@@ -14,7 +18,17 @@ const OverviewPage = () => {
   const { wallet, isPending: walletPending, isError, error } = useMyWallet();
   const { transfers, isPending: transfersPending } = useTransfers();
 
-  if (walletPending || transfersPending) return <PendingPanels label="Loading wallet" />;
+  // Placeholders shaped like the card and table that are coming, so the real content fills
+  // the shape already on screen instead of pushing it around when it lands.
+  if (walletPending || transfersPending) {
+    return (
+      <div aria-busy="true">
+        <SlowRequestNotice />
+        <BalanceCardSkeleton />
+        <TransactionsTableSkeleton />
+      </div>
+    );
+  }
 
   if (isError || !wallet) {
     return (
