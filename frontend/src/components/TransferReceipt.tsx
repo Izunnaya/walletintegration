@@ -3,25 +3,28 @@ import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { money } from "@/lib/money";
 import { easeOut, panelVariants } from "@/lib/motion";
-import type { Transfer } from "@/api/types";
-
+import type { Transfer } from "@/api/contracts";
 type Props = {
   transfer: Transfer;
   success?: boolean;
   onBack?: () => void;
   backLabel?: string;
 };
-
-const TransferReceipt = ({ transfer, success = false, onBack, backLabel }: Props) => {
-  const rows: [string, string][] = [
+const TransferReceipt = ({
+  transfer,
+  success = false,
+  onBack,
+  backLabel,
+}: Props) => {
+  const rows = [
+    ["Transfer ID", transfer.id],
     ["Direction", transfer.direction === "sent" ? "Sent" : "Received"],
-    ["Counterparty", transfer.counterpartyName],
-    ["Counterparty wallet", transfer.counterpartyWallet],
-    ["Transfer reference", transfer.reference],
+    ["Source wallet", transfer.sourceWalletId],
+    ["Destination wallet", transfer.destinationWalletId],
+    ["Reference", transfer.reference],
     ["Time", new Date(transfer.createdAt).toLocaleString()],
-    ["Status", "Completed"],
+    ["Currency", transfer.currency],
   ];
-
   return (
     <motion.section
       className="max-w-xl rounded-xl border bg-card p-6"
@@ -33,36 +36,28 @@ const TransferReceipt = ({ transfer, success = false, onBack, backLabel }: Props
       {onBack && (
         <Button variant="ghost" size="sm" onClick={onBack}>
           <ArrowLeft />
-          {backLabel ?? "Back to workspace"}
+          {backLabel ?? "Back to transfers"}
         </Button>
       )}
-
-      <div className="my-6 flex size-10 items-center justify-center rounded-full bg-success/10 text-success">
-        <Check className="size-5" />
-      </div>
-
+      <Check className="my-6 size-9 text-success" />
       <h2 className="text-xl font-semibold">
         {success ? "Transfer completed" : "Transfer details"}
       </h2>
-      <p className="my-5 text-4xl tracking-tight">{money(transfer.amountMinor)}</p>
-
-      <dl className="flex flex-col gap-5 text-sm">
+      <p className="my-5 break-all text-4xl tracking-tight">
+        {money(transfer.amountMinor)}
+      </p>
+      <dl className="space-y-4 text-sm">
         {rows.map(([label, value]) => (
-          <div key={label} className="flex flex-wrap justify-between gap-2 border-b pb-3">
+          <div
+            key={label}
+            className="flex flex-wrap justify-between gap-2 border-b pb-3"
+          >
             <dt className="text-muted-foreground">{label}</dt>
             <dd className="break-all text-right">{value}</dd>
           </div>
         ))}
       </dl>
-
-      {transfer.note && (
-        <p className="mt-5 text-sm">
-          <span className="text-muted-foreground">Note: </span>
-          {transfer.note}
-        </p>
-      )}
     </motion.section>
   );
 };
-
 export default TransferReceipt;
