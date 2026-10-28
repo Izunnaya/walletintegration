@@ -7,11 +7,16 @@ import { hashPassword } from "./password.ts";
 // nothing of value is protected by it.
 export const DEMO_CUSTOMER_PASSWORD = "demo-password-2026";
 
-// The admin password is a real credential, so it is written once and never reset - the
-// build spec is explicit about that, because a deployed admin password is changed
-// deliberately and not by whoever runs the seed next. Locally it falls back to a documented
-// default; in deployment SEED_ADMIN_PASSWORD is set in the environment.
-export const DEFAULT_LOCAL_ADMIN_PASSWORD = "admin-password-2026";
+// The admin password is a real credential, so it is written once and never reset: the build
+// spec is explicit that a deployed admin password changes deliberately, not because somebody
+// ran the seed again. npm run admin:password is the deliberate path.
+//
+// The fallback below exists only so a fresh laptop database has a usable admin without
+// configuration, and seeding any non-local database without SEED_ADMIN_PASSWORD is refused
+// outright. It is named as unsafe rather than looking like a real password, because an
+// earlier version of this value was published in the README and ended up on the live
+// database.
+export const DEFAULT_LOCAL_ADMIN_PASSWORD = "local-development-only-change-me";
 
 function adminPassword(): string {
   const configured = process.env.SEED_ADMIN_PASSWORD;

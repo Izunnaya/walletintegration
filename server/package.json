@@ -23,12 +23,14 @@
     "test:unit": "vitest run tests/money.test.ts tests/transferPolicy.test.ts tests/seedCommand.test.ts tests/auth.test.ts tests/transferRetry.test.ts",
     "test:integration": "vitest run tests/schema.test.ts tests/seed.test.ts tests/auth.integration.test.ts tests/transfers.integration.test.ts --no-file-parallelism",
     "verify:prisma": "node scripts/verify-prisma.mjs",
-    "reconcile": "node src/reconcile.ts"
+    "reconcile": "node src/reconcile.ts",
+    "admin:password": "node src/setAdminPassword.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
     "bcrypt": "^6.0.0",
+    "cors": "^2.8.6",
     "dotenv": "^18.0.9",
     "express": "^5.3.0",
     "express-rate-limit": "^8.7.1",
@@ -38,6 +40,7 @@
   },
   "devDependencies": {
     "@types/bcrypt": "^6.0.0",
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/node": "^22.20.5",

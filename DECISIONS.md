@@ -785,6 +785,39 @@ Render is unaffected because it connects from its own network.
 **Ruled out:** Render PostgreSQL with a diary note; creating the database late to push the
 expiry out, which contradicts deploying early.
 **Reversible:** yes, it is a connection string.
+## Q26 — The admin password is set by its own command, and never published
+
+**Decided:** the seed writes the admin password once and never resets it. Changing it
+deliberately is `npm run admin:password`, which reads `SEED_ADMIN_PASSWORD`. The README does
+not contain it.
+
+The build spec already required the first half: a deployed admin credential changes
+deliberately, not because somebody ran the seed again. What that rule did not cover is what
+happens to a database seeded *before* the variable existed. There was no way to change the
+password at all, so it kept whatever default it was given.
+
+**This went wrong in the real deployment, which is why it has an entry.** An earlier README
+published `admin-password-2026` as the admin credential, and the live database was seeded
+with it. Anyone reading a public repository could sign in as admin on the deployed service
+and block or unblock any account. It was rotated, the README no longer carries an admin
+password, and the seed's local fallback is now named `local-development-only-change-me` so
+it cannot be mistaken for a real one.
+
+The command is deliberately narrow. It requires the variable, refuses a value under twelve
+characters or over 72 bytes, refuses to touch a row that is not an admin, and verifies the
+new password by reading it back rather than trusting the write. It never runs as part of a
+deploy.
+
+The demo customers are the opposite case: their password *is* published, and is reset on
+every seed run so the database always matches the README. Nothing of value is protected by
+it, and a fixture credential that disagrees with its documentation is worse than a known one.
+
+**Ruled out:** having the seed reset the admin password, which is the rule the spec sets out
+to prevent; keeping the password in the README and treating it as a demo value, which is what
+caused this; deleting and reseeding the admin row, which the audit entries referencing it now
+make impossible.
+**Reversible:** yes. It is one command and one row.
+
 ---
 
 ## Nothing is open

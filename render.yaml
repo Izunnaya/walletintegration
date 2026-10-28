@@ -28,3 +28,7 @@ services:
         sync: false
       - key: SEED_ADMIN_PASSWORD
         sync: false
+      # Comma-separated origins the browser client is served from. Without it the deployed
+      # UI is blocked by the browser even though the API answers correctly.
+      - key: CORS_ORIGINS
+        sync: false

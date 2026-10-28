@@ -1,4 +1,5 @@
 import express from "express";
+import { corsMiddleware } from "./middleware/cors.ts";
 import { attachRequestId } from "./middleware/requestId.ts";
 import { respondNotFound, respondInternalError } from "./middleware/errorHandler.ts";
 import HealthRoute from "./routes/HealthRoute.ts";
@@ -9,15 +10,19 @@ import TransferRoute from "./routes/TransferRoute.ts";
 
 const app = express();
 
-// FIRST of the two, deliberately. A body that is not valid JSON fails inside
-// express.json(), and if the ID were assigned after it, that failure would be the one error
-// a caller cannot quote an ID for - which is exactly when they most need to.
-// Render puts one proxy in front of the service, so req.ip would otherwise be the proxy
-// for every request - and the auth limiter, which is keyed by IP, would lock every caller
-// out together. 1 rather than true: trusting the whole chain would let a caller spoof
+// Render puts one proxy in front of the service, so req.ip would otherwise be the proxy on
+// every request - and the auth limiter, which is keyed by IP, would lock every caller out
+// together. 1 rather than true: trusting the whole chain would let a caller spoof
 // X-Forwarded-For and get a fresh bucket per request.
 app.set("trust proxy", 1);
 
+// Before the rest. A preflight OPTIONS carries no token and no body, so it has to be
+// answered before authentication or body parsing would refuse it.
+app.use(corsMiddleware);
+
+// Before express.json(), deliberately. A body that is not valid JSON fails inside the
+// parser, and with the ID assigned after it that failure would be the one error a caller
+// cannot quote an ID for - exactly when they most need one.
 app.use(attachRequestId);
 
 // Reads the JSON body of a request into req.body. Without this line req.body is undefined.
