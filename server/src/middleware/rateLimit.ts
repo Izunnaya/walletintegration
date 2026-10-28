@@ -11,6 +11,11 @@ import type { Request, Response } from "express";
 // each process would keep its own counts, so N instances would allow N times the limit, and
 // a restart forgets everything. Moving to a shared store is the fix, and is not needed while
 // the service runs as a single Render web service.
+//
+// The keying is the live problem, not the store. These limits are only per-caller if req.ip
+// is the caller, and on Render it is not - see Q32 in OPEN-QUESTIONS.md. The counters in the
+// response headers look correct while this happens, which is why the request log now records
+// req.ip and the raw forwarded chain side by side.
 
 function refusal(req: Request, res: Response) {
   res.status(429).json({

@@ -173,7 +173,9 @@ wins and the conflict is recorded rather than quietly resolved.
 A question raised while building goes into **OPEN-QUESTIONS.md** with its
 options, what each costs, and what it blocks. When it is answered it moves to
 **DECISIONS.md**, keeping its Q-number, with the reasoning and what was ruled
-out. Every one is settled and nothing is open.
+out. One is open: **[Q32](OPEN-QUESTIONS.md)**, which is the rate limiter keying
+on Render's proxy instead of the caller. It is open rather than guessed at
+because every available fix needs a number nobody should invent.
 
 The point of keeping the rejected options is that a later reader can tell a
 deliberate trade-off from an oversight. Two of the settled ones went against the

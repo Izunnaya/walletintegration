@@ -75,8 +75,27 @@ export const httpLoggerOptions: Options = {
 
   // The defaults log the full header set on both sides. These keep the fields that identify
   // the request and drop the rest, so a line stays readable and cannot carry a credential.
+  //
+  // ip and forwardedFor are here for one specific reason: the rate limiter keys on req.ip,
+  // and req.ip depends on getting the "trust proxy" hop count right for the platform. Set
+  // too low, Express reports the proxy instead of the caller and every caller shares one
+  // bucket. Nothing in a response reveals that - the limiter still returns plausible
+  // counters - so these two fields next to each other are the only way to see it. When they
+  // disagree about who the caller is, the hop count is wrong.
+  //
+  // A client IP is personal data, logged deliberately: a wallet service cannot investigate
+  // abuse or defend a rate limit without it.
   serializers: {
-    req: (req) => ({ id: req.id, method: req.method, url: req.url }),
+    req: (req) => ({
+      id: req.id,
+      method: req.method,
+      url: req.url,
+      // req.raw, not req: pino-http hands the serializer its own wrapper, and ip is an
+      // express getter that lives on the request underneath it.
+      ip: (req.raw as { ip?: string } | undefined)?.ip,
+      remoteAddress: req.remoteAddress,
+      forwardedFor: req.headers?.["x-forwarded-for"],
+    }),
     res: (res) => ({ statusCode: res.statusCode }),
   },
 };

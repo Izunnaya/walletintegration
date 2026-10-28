@@ -26,6 +26,9 @@ const sink = new Writable({
 const testLogger = pino({ ...loggerOptions, level: "info" }, sink);
 
 const app = express();
+// The same setting the real app uses, because req.ip depends on it and this file asserts
+// on req.ip.
+app.set("trust proxy", 1);
 app.use(attachRequestId);
 app.use(pinoHttp({ ...httpLoggerOptions, logger: testLogger }));
 app.get("/ok", (_req, res) => void res.json({ status: "ok" }));
@@ -36,7 +39,11 @@ app.get("/health/ready", (_req, res) => void res.json({ status: "ready" }));
 let server: Server | undefined;
 let baseUrl: string;
 
-type Line = Record<string, unknown> & { msg?: string; level?: string; req?: { id?: string } };
+type Line = Record<string, unknown> & {
+  msg?: string;
+  level?: string;
+  req?: { id?: string; ip?: string; forwardedFor?: string };
+};
 
 // pino-http writes when the response finishes, which is after fetch has already resolved.
 async function waitForLine(match: (line: Line) => boolean): Promise<Line | undefined> {
@@ -101,6 +108,29 @@ describe("every line is structured", () => {
     const line = await waitForLine((entry) => entry.level === "info");
 
     expect(line).toBeDefined();
+  });
+});
+
+describe("the rate limiter is auditable from the log", () => {
+  it("records both req.ip and the raw X-Forwarded-For, so a wrong hop count is visible", async () => {
+    // The limiter keys on req.ip. req.ip depends on the "trust proxy" hop count matching the
+    // platform, and when it does not, Express reports the proxy and every caller shares one
+    // bucket while the response counters still look plausible. These two fields side by side
+    // are the only way to see that from a log: when they disagree about who the caller is,
+    // the hop count is wrong. This app sets trust proxy to 1, so with one forwarded entry
+    // req.ip is the caller.
+    const response = await fetch(`${baseUrl}/ok`, {
+      headers: { "X-Forwarded-For": "203.0.113.9" },
+    });
+    const requestId = response.headers.get("x-request-id") ?? "";
+
+    const line = await waitForLine((entry) => entry.req?.id === requestId);
+
+    // With trust proxy 1 and a single forwarded entry, req.ip is the caller. Add a second
+    // entry - which is what a platform proxy does - and req.ip becomes that proxy instead.
+    // That is the bug this pair of fields exists to expose.
+    expect(line?.req).toMatchObject({ forwardedFor: "203.0.113.9", ip: "203.0.113.9" });
+    expect(typeof (line?.req as { remoteAddress?: unknown })?.remoteAddress).toBe("string");
   });
 });
 
