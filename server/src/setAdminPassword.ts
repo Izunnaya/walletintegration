@@ -75,7 +75,7 @@ const run = async () => {
     const works = await verifyPassword(password, updated.passwordHash);
 
     if (!works) {
-      console.error("The password was written but does not verify. Nothing has been changed.");
+      console.error("The password hash was written but does not verify. The admin account may be unusable. Re-run this command.");
       process.exitCode = 1;
       return;
     }
