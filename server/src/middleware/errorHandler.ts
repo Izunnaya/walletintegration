@@ -1,5 +1,6 @@
 // "import type" because Node runs this TypeScript directly: these are types, not real exports of express
 import type { Request, Response, NextFunction } from "express";
+import { classifyTransactionError } from "../models/transactionErrors.ts";
 
 // Runs when no route matched the request
 export const respondNotFound = (req: Request, res: Response) => {
@@ -53,17 +54,32 @@ export const respondInternalError = (
 ) => {
   const fault = clientFault(error);
 
-  // A caller's malformed request is logged as a rejection, not a failure, so it does not
-  // sit in the logs looking like an outage.
-  if (fault) {
+  // A connection pool timeout, an unreachable database, a dropped socket: the request did
+  // not succeed, but nothing about the service is broken and trying again may well work.
+  // Answering 500 would be wrong twice over - it tells the client not to retry something
+  // that would probably succeed, and it files a capacity problem as a defect.
+  //
+  // The transfer already draws this distinction inside its own retry loop. Everything else
+  // reaching here - a login, a wallet read, a history page - had no such handling, so a
+  // pool timeout under load surfaced as 500. This is the same classifier, applied once at
+  // the edge, so the whole API answers transient failures the same way.
+  const transient = fault === null && classifyTransactionError(error) !== "unexpected";
+
+  if (transient) {
+    console.warn("request_unavailable", {
+      requestId: req.requestId,
+      path: req.path,
+      error,
+    });
+  } else if (fault) {
     console.warn("request_rejected", {
       requestId: req.requestId,
       path: req.path,
       code: fault.code,
     });
   } else {
-    // The real error goes to the logs. The client only gets the request ID, because the message and
-    // stack would tell an attacker about our database, file paths and libraries.
+    // The real error goes to the logs. The client only gets the request ID, because the
+    // message and stack would tell an attacker about our database, file paths and libraries.
     console.error("request_failed", { requestId: req.requestId, path: req.path, error });
   }
 
@@ -77,6 +93,18 @@ export const respondInternalError = (
   if (fault) {
     res.status(fault.status).json({
       error: { code: fault.code, message: fault.message, requestId: req.requestId },
+    });
+    return;
+  }
+
+  if (transient) {
+    res.setHeader("Retry-After", "1");
+    res.status(503).json({
+      error: {
+        code: "SERVICE_UNAVAILABLE",
+        message: "The service is briefly unavailable. Try again.",
+        requestId: req.requestId,
+      },
     });
     return;
   }

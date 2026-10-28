@@ -147,3 +147,76 @@ describe("the allowlist", () => {
     expect(response.status).toBe(200);
   });
 });
+
+describe("transient failures", () => {
+  it("answers 503 with Retry-After, not 500, when the database is briefly unavailable", async () => {
+    // A connection pool timeout, an unreachable database or a dropped socket means the
+    // request did not succeed while nothing is broken. 500 would tell the client not to
+    // retry something that would probably work, and would file a capacity problem as a
+    // defect. This surfaced for real: concurrent logins on Render returned 500.
+    const poolTimeout = Object.assign(new Error("Timed out fetching a new connection"), {
+      code: "P2024",
+    });
+
+    const { respondInternalError } = await import("../src/middleware/errorHandler.ts");
+
+    const headers = new Map<string, string>();
+    let status = 0;
+    let body: unknown;
+
+    const res = {
+      headersSent: false,
+      setHeader: (name: string, value: string) => headers.set(name.toLowerCase(), value),
+      status(code: number) {
+        status = code;
+        return this;
+      },
+      json(payload: unknown) {
+        body = payload;
+        return this;
+      },
+    };
+
+    respondInternalError(
+      poolTimeout,
+      { requestId: "test-request-id", path: "/auth/login" } as never,
+      res as never,
+      (() => undefined) as never,
+    );
+
+    expect(status).toBe(503);
+    expect(headers.get("retry-after")).toBe("1");
+    expect(body).toMatchObject({
+      error: { code: "SERVICE_UNAVAILABLE", requestId: "test-request-id" },
+    });
+  });
+
+  it("still answers 500 for an error that is genuinely ours", async () => {
+    const { respondInternalError } = await import("../src/middleware/errorHandler.ts");
+
+    let status = 0;
+    let body: unknown;
+    const res = {
+      headersSent: false,
+      setHeader: () => undefined,
+      status(code: number) {
+        status = code;
+        return this;
+      },
+      json(payload: unknown) {
+        body = payload;
+        return this;
+      },
+    };
+
+    respondInternalError(
+      new TypeError("cannot read property of undefined"),
+      { requestId: "test-request-id", path: "/wallets/me" } as never,
+      res as never,
+      (() => undefined) as never,
+    );
+
+    expect(status).toBe(500);
+    expect(body).toMatchObject({ error: { code: "INTERNAL_ERROR" } });
+  });
+});
