@@ -886,3 +886,8 @@ is empty, and stays in the repository because the next question goes there first
 **Validation:** Zod infers response types and mirrors backend input limits; amounts and IDs remain strings and bigint preserves precision. Upgrade Zod to the patched 4.x release after the dependency audit flagged the old release. Runtime audit reports no known advisories.
 
 **Verification:** 15 checks cover precision, validation and browser workflows with API-shaped fixtures. Separately smoke-check deployed login, wallet reads and transfer-form rendering without submitting production transfers or admin changes. Full structure, commands and tradeoffs are documented in [frontend/README.md](frontend/README.md).
+
+
+### User-facing error messages (2026-10-28)
+
+Login failures explain the problem without displaying internal request IDs. The same rule applies to shared error alerts and toasts. Request IDs remain in the API error and backend logs for tracing; they are diagnostic metadata rather than instructions for the user. Browser regression checks cover failed login and read errors, including successful retry.

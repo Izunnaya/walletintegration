@@ -28,11 +28,6 @@ const ApiFeedback = ({
         {apiError?.retryAfterSeconds !== undefined && (
           <p>Try again in {apiError.retryAfterSeconds} seconds.</p>
         )}
-        {apiError?.requestId && (
-          <p className="mt-2 break-all text-xs">
-            Request ID: {apiError.requestId}
-          </p>
-        )}
         {onRetry && (
           <Button variant="outline" className="mt-3" onClick={onRetry}>
             Try again

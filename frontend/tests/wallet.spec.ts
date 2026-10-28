@@ -56,6 +56,7 @@ async function setupApi(page: Page, role: "customer" | "admin" = "customer") {
     restrictions: [] as { path: string; body: unknown }[],
     failure: 0,
     loginFailure: false,
+    invalidLogin: false,
     walletError: false,
   };
   await page.route("http://127.0.0.1:4010/**", async (route) => {
@@ -86,6 +87,18 @@ async function setupApi(page: Page, role: "customer" | "admin" = "customer") {
     if (path === "/health/live") return json({ status: "ok" });
     if (path === "/health/ready") return json({ status: "ready" });
     if (path === "/auth/login") {
+      if (state.invalidLogin) {
+        return json(
+          {
+            error: {
+              code: "INVALID_CREDENTIALS",
+              message: "Invalid email or password.",
+              requestId: "login-error",
+            },
+          },
+          401,
+        );
+      }
       if (state.loginFailure) {
         state.loginFailure = false;
         return json(
@@ -261,6 +274,30 @@ test("sign-in uses real API shapes and shows only supported customer controls", 
   expect(
     state.requests.filter((request) => request.path.startsWith("/admin")),
   ).toHaveLength(0);
+});
+
+test("failed login shows a clear message without internal request IDs", async ({
+  page,
+}) => {
+  const state = await setupApi(page);
+  state.invalidLogin = true;
+  await page.goto("/login");
+  await page.getByLabel("Email", { exact: true }).fill("ada@example.com");
+  await page.getByLabel("Password", { exact: true }).fill("wrong password");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Invalid email or password.",
+  );
+  await expect(
+    page.getByText(/login-error|test-request|Request ID:/),
+  ).toHaveCount(0);
+  await expect(page).toHaveURL(/\/login$/);
+  state.invalidLogin = false;
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("correct horse battery staple");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page.getByRole("heading", { name: /Hello,/ })).toBeVisible();
 });
 
 test("public registration creates a customer and returns to sign-in", async ({
@@ -517,13 +554,16 @@ test("admin actions use user IDs and reasons and expose the real audit trail", a
   ).toBeVisible();
 });
 
-test("server failures display their support request ID and allow a read retry", async ({
+test("server failures show a helpful message without internal IDs and allow a read retry", async ({
   page,
 }) => {
   const state = await setupApi(page);
   state.walletError = true;
   await login(page);
-  await expect(page.getByText("Request ID: wallet-error")).toBeVisible();
+  await expect(
+    page.getByText("Database unavailable", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText(/wallet-error|Request ID:/)).toHaveCount(0);
   state.walletError = false;
   await page.getByRole("button", { name: "Try again", exact: true }).click();
   await expect(page.getByText("Wallet balance", { exact: true })).toBeVisible();

@@ -55,7 +55,7 @@ Pure functions handle money, IDs, validation and intent comparison. Storage, tim
 
 The API returns a JWT in JSON and has no cookie or refresh endpoint. The session is kept in per-tab sessionStorage, survives reload, and is removed at sign-out or a protected 401. Passwords are never stored. If storage is blocked, login works in memory. Session storage is accessible to JavaScript and is not protection against XSS; an HttpOnly-cookie session would require a backend change. Client role guards control navigation; the backend authorizes requests.
 
-Errors display the server's message, field details, support request ID and Retry-After where supplied. Authentication and admin writes have no automatic retries. Reads retry a server failure once, and do not automatically retry 401 or 429 responses. Public account forms and admin confirmation honor Retry-After with a disabled countdown. Browser access to response headers depends on the API exposing them through CORS.
+Errors display the server's message, field details and Retry-After where supplied. Request IDs stay on the API error for diagnostics and are not rendered in alerts or toasts. Authentication and admin writes have no automatic retries. Reads retry a server failure once, and do not automatically retry 401 or 429 responses. Public account forms and admin confirmation honor Retry-After with a disabled countdown. Browser access to response headers depends on the API exposing them through CORS.
 
 ## Money and transfer recovery
 
@@ -74,6 +74,6 @@ npm test
 # $env:PLAYWRIGHT_CHANNEL='msedge'; npm test
 ```
 
-The 15 checks cover exact large amounts/IDs, password bytes, login/registration, role guards, cursor pagination, receipts, request-ID errors, rate limiting, interrupted-transfer recovery, fresh keys after rejection, session expiry, account isolation, admin audit actions and mobile navigation/theme. Browser requests are intercepted with backend-shaped fixtures: these tests verify frontend behavior, not production concurrency or database correctness. Tests use a separate Vite instance on port 3012 and override the API URL, so they never send money to production.
+The 16 checks cover exact large amounts/IDs, password bytes, login/registration, role guards, cursor pagination, receipts, clear errors without internal request IDs, rate limiting, interrupted-transfer recovery, fresh keys after rejection, session expiry, account isolation, admin audit actions and mobile navigation/theme. Browser requests are intercepted with backend-shaped fixtures: these tests verify frontend behavior, not production concurrency or database correctness. Tests use a separate Vite instance on port 3012 and override the API URL, so they never send money to production.
 
 Production smoke verification separately used an existing demo account to read its wallet and display the transfer form. No money or admin changes were submitted.
