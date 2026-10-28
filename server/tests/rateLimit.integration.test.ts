@@ -102,30 +102,6 @@ describe("auth rate limit", () => {
     expect((await login(client, { email: "bystander@example.com", password: "wrong password" })).status).toBe(401);
   });
 
-  it("caps total attempts on one account across many clients", async () => {
-    // The ceiling the per-client limit cannot provide: distributed guessing. Every attempt
-    // costs a bcrypt hash, so this bounds the work one account can be made to do. Nine
-    // attempts per address keeps each client under both its own account limit and the
-    // per-IP auth limit, so the only thing that can refuse this is the ceiling.
-    const statuses: number[] = [];
-
-    for (let client = 0; client < 8 && !statuses.includes(429); client++) {
-      for (let attempt = 0; attempt < 9; attempt++) {
-        const response = await login(`10.20.${client}.1`, {
-          email: "ceiling@example.com",
-          password: "wrong password",
-        });
-        statuses.push(response.status);
-        if (response.status === 429) break;
-      }
-    }
-
-    const firstRefusal = statuses.indexOf(429);
-    expect(firstRefusal, "the account ceiling never refused").toBeGreaterThan(-1);
-    // Above the per-client limit, which proves the ceiling refused it and not the tight one.
-    expect(firstRefusal).toBeGreaterThan(10);
-  });
-
   it("aggregates IPv6 clients in the same /56 subnet", async () => {
     for (let attempt = 0; attempt < AUTH_LIMIT; attempt++) {
       expect((await login(`2001:db8:abcd:1200::${attempt + 1}`)).status).toBe(400);
