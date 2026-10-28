@@ -97,7 +97,7 @@ sign in without being sent anything.
 | `ada@example.com` | `demo-password-2026` | NGN 500,000 | The funded sender |
 | `bode@example.com` | `demo-password-2026` | NGN 250,000 | The recipient |
 | `chidi@example.com` | `demo-password-2026` | NGN 10 | Insufficient funds |
-| `admin@wallet.internal` | `admin-password-2026` | NGN 0 | Admin-only endpoints |
+| `admin@wallet.internal` | **not published** | NGN 0 | Admin-only endpoints |
 | `fraudster@example.com` | no account | — | Blacklisted; registration refuses it |
 
 `system@wallet.internal` owns the funding wallet and **cannot be signed into at all**. The
@@ -105,9 +105,26 @@ seed gives it a hash of random bytes nobody holds the input to, so the one walle
 go negative has no usable login.
 
 The three customer passwords are reset on every seed run, so the database always matches
-this table. The admin password is written once and never reset, because it is a real
-credential: in deployment it comes from `SEED_ADMIN_PASSWORD` and is shared privately,
-never published.
+this table. Nothing of value is protected by them.
+
+**The admin password is deliberately not in this file.** It is a real credential: it grants
+the ability to block and unblock any account, so publishing it here would hand that to
+anyone who reads the repository. It comes from `SEED_ADMIN_PASSWORD` and is shared with
+reviewers privately.
+
+The seed writes it once and never resets it, because a deployed credential should not change
+because somebody ran the seed again. To set or rotate it deliberately:
+
+```sh
+SEED_ADMIN_PASSWORD='...' npm run admin:password
+```
+
+That command refuses an unset, short or over-long value, refuses to touch a non-admin row,
+and verifies the new password by reading it back rather than trusting the write.
+
+An earlier version of this README did publish an admin password, and the deployed database
+was seeded with it. It has been rotated. The lesson is recorded rather than quietly fixed:
+a credential in a public file is a working credential, not a placeholder.
 
 **Postman:** import [docs/wallet-service.postman_collection.json](docs/wallet-service.postman_collection.json).
 Run any Login request first; it stores the token in a `{{token}}` collection variable that
@@ -156,7 +173,7 @@ wins and the conflict is recorded rather than quietly resolved.
 A question raised while building goes into **OPEN-QUESTIONS.md** with its
 options, what each costs, and what it blocks. When it is answered it moves to
 **DECISIONS.md**, keeping its Q-number, with the reasoning and what was ruled
-out. All twenty-five are settled.
+out. All twenty-six are settled.
 
 The point of keeping the rejected options is that a later reader can tell a
 deliberate trade-off from an oversight. Two of the settled ones went against the

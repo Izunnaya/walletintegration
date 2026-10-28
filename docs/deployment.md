@@ -45,6 +45,18 @@ deliberate — see **Why Neon rather than Render PostgreSQL** below.
 
    It is never run automatically on startup, and running it twice changes nothing.
 
+6. **Set the admin password.** The seed writes it once and never resets it, so a database
+   seeded before `SEED_ADMIN_PASSWORD` existed keeps whatever default it was given. Set it
+   deliberately:
+
+   ```sh
+   SEED_ADMIN_PASSWORD='...' npm run admin:password
+   ```
+
+   The database is Neon rather than Render-internal, so this runs from anywhere with the
+   connection string — there is no need for a shell on the web service, which the free plan
+   does not provide anyway.
+
 ## Checks that prove it is actually up
 
 ```sh

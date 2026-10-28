@@ -23,7 +23,8 @@
     "test:unit": "vitest run tests/money.test.ts tests/transferPolicy.test.ts tests/seedCommand.test.ts tests/auth.test.ts tests/transferRetry.test.ts",
     "test:integration": "vitest run tests/schema.test.ts tests/seed.test.ts tests/auth.integration.test.ts tests/transfers.integration.test.ts --no-file-parallelism",
     "verify:prisma": "node scripts/verify-prisma.mjs",
-    "reconcile": "node src/reconcile.ts"
+    "reconcile": "node src/reconcile.ts",
+    "admin:password": "node src/setAdminPassword.ts"
   },
   "dependencies": {
     "@prisma/adapter-pg": "^7.10.1",
