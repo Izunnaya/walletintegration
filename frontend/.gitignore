@@ -1,0 +1,8 @@
+node_modules
+dist
+*.tsbuildinfo
+
+# Environment variables. .env.example is committed; real values are not.
+.env
+.env.*
+!.env.example
