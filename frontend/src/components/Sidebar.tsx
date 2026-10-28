@@ -2,157 +2,111 @@ import { NavLink, Link } from "react-router-dom";
 import {
   ArrowLeftRight,
   ArrowUpRight,
-  CircleHelp,
   LayoutDashboard,
-  LockKeyhole,
+  LogOut,
   Moon,
-  Plus,
   ShieldCheck,
   Sun,
-  Users,
+  ScrollText,
   Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useWorkspace } from "@/components/WorkspaceProvider";
+import { useTheme } from "@/components/ThemeProvider";
+import { useAuth } from "@/auth/AuthProvider";
 import { cn } from "@/lib/utils";
 
-// NavLink rather than a button and a comparison. It knows which route is current, so the
-// active style and aria-current come from the router instead of a state variable that has to
-// be kept in step with it.
-
-const workspaceLinks = [
+const links = [
   { to: "/", label: "Overview", icon: LayoutDashboard },
-  { to: "/transfer", label: "Transfer", icon: ArrowUpRight },
+  { to: "/transfer", label: "Send money", icon: ArrowUpRight },
   { to: "/transactions", label: "Transactions", icon: ArrowLeftRight },
 ];
-
 const adminLinks = [
-  { to: "/admin/users", label: "User management", icon: Users },
-  { to: "/admin/users/new", label: "Create account", icon: Plus },
+  { to: "/admin/access", label: "Account access", icon: ShieldCheck },
+  { to: "/admin/audit", label: "Audit log", icon: ScrollText },
 ];
-
-type Props = {
-  open: boolean;
-  onNavigate: () => void;
-  onOpenHelp: () => void;
-};
-
-const SidebarLink = ({
-  to,
-  label,
-  icon: Icon,
-  onNavigate,
-}: {
-  to: string;
-  label: string;
-  icon: typeof Wallet;
-  onNavigate: () => void;
-}) => (
-  <NavLink
-    to={to}
-    end
-    onClick={onNavigate}
-    className={({ isActive }) => cn("nav-item", isActive && "nav-active")}
-  >
-    {({ isActive }) => (
-      <>
-        <Icon className="size-[17px]" />
-        {label}
-        {isActive && <span className="ml-auto size-1.5 rounded-full bg-foreground" />}
-      </>
-    )}
-  </NavLink>
-);
-
-const Sidebar = ({ open, onNavigate, onOpenHelp }: Props) => {
-  const { role, theme, toggleTheme } = useWorkspace();
-
+type Props = { open: boolean; onNavigate: () => void };
+const Sidebar = ({ open, onNavigate }: Props) => {
+  const { theme, toggleTheme } = useTheme();
+  const { session, signOut } = useAuth();
+  const user = session?.user;
   return (
     <aside
       className={cn(
-        "fixed inset-y-0 left-0 z-40 flex w-[232px] flex-col border-r bg-sidebar transition-transform md:translate-x-0",
-        open ? "translate-x-0" : "-translate-x-full",
+        "fixed inset-y-0 left-0 z-40 w-[232px] flex-col overflow-y-auto border-r bg-sidebar",
+        open ? "flex" : "hidden md:flex",
       )}
     >
-      <Link to="/" onClick={onNavigate} className="flex h-[84px] items-center gap-2.5 px-7">
-        <span className="flex size-8 items-center justify-center rounded-lg bg-foreground text-background">
-          <Wallet className="size-4.5" strokeWidth={2.1} />
-        </span>
-        <span className="text-[23px] font-semibold tracking-[-1px]">
-          folio<span className="text-muted-foreground">.</span>
-        </span>
+      <Link
+        to="/"
+        onClick={onNavigate}
+        className="flex h-[84px] shrink-0 items-center gap-2.5 px-7"
+      >
+        <Wallet className="size-7" />
+        <span className="text-[23px] font-semibold tracking-tight">folio.</span>
       </Link>
-
-      <div className="mx-4 mb-7 flex items-center gap-3 rounded-lg border bg-background px-3 py-3">
-        <span className="flex size-8 items-center justify-center rounded-md bg-muted text-xs font-semibold">
-          AM
-        </span>
-        <div className="flex-1">
-          <p className="text-xs font-medium">Personal workspace</p>
-          <p className="mt-1 text-[11px] text-muted-foreground">Demo account</p>
-        </div>
-        <LockKeyhole className="size-3.5 text-muted-foreground" />
-      </div>
-
-      <nav aria-label="Main navigation" className="flex flex-col gap-1 px-3">
-        <p className="mb-2 px-3 text-[10px] font-medium tracking-[1.3px] text-muted-foreground">
-          WORKSPACE
+      <div className="mx-4 mb-7 rounded-lg border bg-background p-3">
+        <p className="text-xs font-medium">{user?.name}</p>
+        <p className="mt-1 break-all text-[11px] text-muted-foreground">
+          {user?.email}
         </p>
-        {workspaceLinks.map((link) => (
-          <SidebarLink key={link.to} {...link} onNavigate={onNavigate} />
+        <p className="mt-2 text-[11px] capitalize text-muted-foreground">
+          {user?.role}
+        </p>
+      </div>
+      <nav aria-label="Main navigation" className="space-y-1 px-3">
+        {links.map(({ to, label, icon: Icon }) => (
+          <NavLink
+            key={to}
+            to={to}
+            end
+            onClick={onNavigate}
+            className={({ isActive }) =>
+              cn("nav-item", isActive && "nav-active")
+            }
+          >
+            <Icon className="size-4" />
+            {label}
+          </NavLink>
         ))}
-
-        {role === "admin" && (
+        {user?.role === "admin" && (
           <>
-            <p className="mb-2 mt-8 px-3 text-[10px] font-medium tracking-[1.3px] text-muted-foreground">
+            <p className="px-3 pb-2 pt-7 text-[10px] font-medium tracking-widest text-muted-foreground">
               ADMINISTRATION
             </p>
-            {adminLinks.map((link) => (
-              <SidebarLink key={link.to} {...link} onNavigate={onNavigate} />
+            {adminLinks.map(({ to, label, icon: Icon }) => (
+              <NavLink
+                key={to}
+                to={to}
+                onClick={onNavigate}
+                className={({ isActive }) =>
+                  cn("nav-item", isActive && "nav-active")
+                }
+              >
+                <Icon className="size-4" />
+                {label}
+              </NavLink>
             ))}
           </>
         )}
-
-        <NavLink to="/login" onClick={onNavigate} className="nav-item mt-4">
-          <LockKeyhole className="size-4" />
-          Sign in
-        </NavLink>
       </nav>
-
-      <div className="mt-auto px-4 pb-4">
-        <div className="mb-5 rounded-lg border p-3.5">
-          <div className="flex items-center gap-2 text-xs font-medium">
-            <ShieldCheck className="size-4" />
-            A little peace of mind.
-          </div>
-          <p className="mt-2 text-[11px] leading-relaxed text-muted-foreground">
-            Your money, with a clearer view.
-            <br />
-            Every movement accounted for.
-          </p>
-        </div>
-
-        <button type="button" className="nav-item w-full" onClick={onOpenHelp}>
-          <CircleHelp className="size-4" />
-          Help &amp; support
-          <ArrowUpRight className="ml-auto size-3.5" />
-        </button>
-
-        <div className="mt-3 flex items-center gap-3 border-t pt-4">
-          <span className="flex size-8 items-center justify-center rounded-full bg-muted text-xs font-medium">
-            AM
-          </span>
-          <div className="flex-1">
-            <p className="text-xs font-medium">Alex Morgan</p>
-            <p className="mt-0.5 text-[10px] text-muted-foreground">alex@studio.co</p>
-          </div>
-          <Button variant="ghost" size="icon-sm" aria-label="Toggle dark mode" onClick={toggleTheme}>
-            {theme === "dark" ? <Sun /> : <Moon />}
-          </Button>
-        </div>
+      <div className="mt-auto space-y-3 p-4 pt-8">
+        <Button
+          variant="outline"
+          className="w-full"
+          onClick={() => {
+            signOut();
+            onNavigate();
+          }}
+        >
+          <LogOut className="size-4" />
+          Sign out
+        </Button>
+        <Button variant="ghost" className="w-full" onClick={toggleTheme}>
+          {theme === "dark" ? <Sun /> : <Moon />}
+          {theme === "dark" ? "Light mode" : "Dark mode"}
+        </Button>
       </div>
     </aside>
   );
 };
-
 export default Sidebar;
