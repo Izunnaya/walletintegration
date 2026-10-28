@@ -14,3 +14,8 @@ coverage/
 # Internal tooling and its output. Not part of what the service ships.
 /server/scripts/audit-production.mjs
 /docs/production-audit-*.md
+
+# Working notes, kept out of the published repository.
+/DECISIONS.md
+/WALKTHROUGH.md
+/OPEN-QUESTIONS.md
