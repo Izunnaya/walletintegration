@@ -12,7 +12,7 @@ services:
     # exists before tsc compiles against it. migrate deploy applies any pending migration
     # before the new build is started - on the free plan there is no separate release phase,
     # so it belongs here.
-    buildCommand: npm ci && npm run migrate && npm run build
+    buildCommand: npm ci --include=dev && npm run migrate && npm run build
     startCommand: npm start
     # Render restarts the service if this stops answering. It points at readiness, not
     # liveness, because a process that is up but cannot reach the database should not be
