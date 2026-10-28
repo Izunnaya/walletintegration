@@ -207,6 +207,11 @@ describe("GET /transfers", () => {
 });
 
 describe("GET /transfers/:id", () => {
+  it("answers 404 for out-of-range database IDs before querying PostgreSQL", async () => {
+    for (const id of ["9223372036854775808", "0", "-1", "not-an-id"]) {
+      expect((await get(`/transfers/${id}`, ada.token)).status).toBe(404);
+    }
+  });
   it("returns a transfer the caller sent or received", async () => {
     const list = await get("/transfers?limit=1", ada.token);
     const { transfers } = (await list.json()) as { transfers: { id: string }[] };
