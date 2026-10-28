@@ -1,10 +1,9 @@
 # Prisma database workflow
 
-Prisma 7 now owns database queries, generated model types, migrations, and the
-seed transaction. This replaces the earlier `pg`-only decision at the user's
-request. PostgreSQL remains the database; `@prisma/adapter-pg` uses the `pg` driver
-under Prisma. Direct `pg` queries remain only in database-constraint tests and
-the disposable verification script.
+Prisma 7 owns database queries, generated model types, migrations and the seed
+transaction. PostgreSQL remains the database. `@prisma/adapter-pg` uses the `pg`
+driver underneath. Direct `pg` queries remain only in the constraint tests and the
+verification script. See [ADR 10](decisions.md).
 
 ## Files to understand
 
@@ -126,17 +125,19 @@ in `finally`. It requires permission to create schemas and reach PostgreSQL. If 
 process is forcibly killed, cleanup may not run; remove only the recorded temporary
 schema after confirming no verification process is using it.
 
-For an already prepared, separate test database/schema, set TEST_DATABASE_URL and
-run `npm test`. Tests refuse to use the application schema. Run database test files
-sequentially because they truncate tables inside rolled-back transactions. The
-constraint suite deliberately uses `pg` to check the exact PostgreSQL constraints;
-the seed suite exercises Prisma's actual transactions and ORM writes.
+`npm test` uses `DATABASE_URL`. There is no separate test database. Integration
+suites isolate themselves with a per-run schema named by UUID, or by working inside a
+transaction that is always rolled back. `fileParallelism` is off because some suites
+truncate tables. Connect on the direct endpoint, not the pooled one; PgBouncer shares
+session state and leaks `SET search_path`.
 
-## Verified result for the Prisma migration
+The constraint suite uses `pg` directly to check the exact PostgreSQL constraints. The
+seed suite exercises Prisma's transactions and ORM writes.
 
-Prisma schema validation, TypeScript checking, and the production build passed.
-All 81 tests passed: 50 unit/command tests, 21 PostgreSQL constraint tests, and
-10 Prisma seed integration tests. The disposable-schema verification also passed
-fresh migration, migration rerun, the compiled seed, CLI seed rerun with unchanged
-balances, and baseline adoption with existing balances unchanged. Temporary schema
-cleanup completed. The actual application schema was not reset or baselined.
+## What verification covers
+
+`npm run verify:prisma` establishes, in a disposable schema: a fresh migration, a
+migration rerun, the compiled seed, a CLI seed rerun leaving balances unchanged, and
+baseline adoption leaving existing balances unchanged.
+
+Adopting Prisma required no reset of the application schema.

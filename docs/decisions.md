@@ -1,303 +1,236 @@
 # Architecture decisions
 
-The design choices behind this service, why they were made, and what they cost. Each entry
-is written so you can tell a deliberate trade-off from an oversight before you change it.
+Why the service is built this way, and what each choice costs. Read the relevant entry before
+changing one of these. Superseded entries are kept and marked.
 
-Superseded entries are kept and marked rather than deleted.
+## ADR 1. Money is whole kobo in bigint, and a string in JSON
 
----
+NGN amounts need exact arithmetic. A JSON number is an IEEE 754 double and stops being exact
+above the safe integer range.
 
-## ADR 1 — Money is whole kobo in `bigint`, and a string in JSON
+Money is an integer count of kobo. Stored in `BIGINT`, held as `bigint`, serialized as a
+string. `₦1,500.00` is `"150000"`.
 
-**Context.** NGN amounts need exact arithmetic. A JSON number is an IEEE 754 double, so a
-large enough balance stops being exact once it crosses the safe integer range.
+Every arithmetic path uses `bigint`, never `Number`. Clients parse the string. Formatting
+happens at the edge only.
 
-**Decision.** Money is an integer count of kobo, stored in `BIGINT`, held in JavaScript as
-`bigint`, and serialised in JSON as a **string**. `₦1,500.00` is `"150000"`.
+## ADR 2. READ COMMITTED with explicit row locks, not SERIALIZABLE
 
-**Consequences.** Every arithmetic path uses `bigint` and never `Number`. Clients must parse
-the string rather than letting a JSON parser produce a float. Formatting for display happens
-at the edge; nothing does arithmetic on a formatted value.
+Concurrent transfers on the same wallet must not interleave into a wrong balance.
 
----
+Keep PostgreSQL's default `READ COMMITTED`. Lock the rows a transfer touches.
 
-## ADR 2 — `READ COMMITTED` with explicit row locks, not `SERIALIZABLE`
+Correctness is visible in the code instead of depending on the planner raising a serialization
+error. The locking becomes the service's responsibility, which is what ADR 3 covers.
 
-**Context.** Concurrent transfers against the same wallet must not interleave into a wrong
-balance.
+## ADR 3. Lock users first, then wallets, each in sorted id order
 
-**Decision.** Keep PostgreSQL's default `READ COMMITTED` and take explicit row locks on the
-rows a transfer touches.
+Two transfers moving money in opposite directions between the same two wallets deadlock if
+they lock in different orders.
 
-**Consequences.** Correctness is visible in the code — you can read which rows are locked —
-rather than relying on the planner to detect a conflict and raise a serialisation error. The
-cost is that the locking is now the service's responsibility, so ADR 3 matters.
+A transfer locks user rows before wallet rows. Within each group it orders by `id`. Users take
+`FOR NO KEY UPDATE`; wallets take `FOR UPDATE`.
 
----
+Deadlock is prevented by ordering, not detected and retried. Any new query that locks these
+tables must use the same order.
 
-## ADR 3 — Locks are taken users first, then wallets, each in sorted id order
+`FOR NO KEY UPDATE` on users does not conflict with the `FOR KEY SHARE` the idempotency
+record's foreign key takes, so claiming a key and then locking the user cannot self-deadlock.
 
-**Context.** Two transfers moving money in opposite directions between the same pair of
-wallets will deadlock if they lock the same rows in a different order.
-
-**Decision.** A transfer locks user rows before wallet rows, and within each group it orders
-by `id`. Users take `FOR NO KEY UPDATE`; wallets take `FOR UPDATE`.
-
-**Consequences.** Deadlock is prevented by ordering rather than detected and retried. Any new
-query that locks these tables must use the same order. `FOR NO KEY UPDATE` on users is
-deliberate: it does not conflict with the `FOR KEY SHARE` that the idempotency record's
-foreign key takes, so claiming a key and then locking the user cannot self-deadlock.
-
-The ordering now comes from a single statement that selects users through a subquery on
-wallets. PostgreSQL applies `LockRows` above the `Sort`, so rows are still locked in
-ascending id order — verified with `EXPLAIN`, and covered by a concurrency test that watches
+The ordering comes from one statement that selects users through a subquery on wallets.
+PostgreSQL places `LockRows` above the `Sort`, so rows are still locked in ascending id order.
+Verified with `EXPLAIN` and covered by a concurrency test that reads
 `pg_stat_database.deadlocks`.
 
----
+## ADR 4. The idempotency record is written inside the transfer transaction
 
-## ADR 4 — The idempotency record is written inside the transfer transaction
+A client retrying after a lost response must not move money twice.
 
-**Context.** A client that retries after a lost response must not move money twice.
+The key is claimed with `INSERT ... ON CONFLICT DO NOTHING` inside the transaction that moves
+the money, before the balances change.
 
-**Decision.** The key is claimed with `INSERT ... ON CONFLICT DO NOTHING` **inside** the same
-transaction that moves the money, before the balances change.
+The claim and the money commit or roll back together. A failed transfer leaves no claim, so
+the key is reusable as a first attempt. A claim that exists always corresponds to a real
+outcome. Claiming first in a separate transaction can strand a key against a transfer that
+never happened.
 
-**Consequences.** The claim and the money commit or roll back together, so a failed transfer
-leaves no claim behind and the key is reusable as a first attempt. A claim that exists always
-corresponds to a real outcome. The alternative — claiming first in its own transaction — can
-strand a key against a transfer that never happened.
+## ADR 5. A business rejection is committed as the key's result
 
----
+An insufficient-funds refusal is an answer, not a system failure.
 
-## ADR 5 — A business rejection is committed as the key's result
+A rejection is stored against the key with its status code and body, the same as a success.
 
-**Context.** An insufficient-funds refusal is an answer, not a failure of the system.
+Retrying returns the same refusal instead of re-running the transfer against a balance that
+may have changed. One stable answer per key is what makes a blind retry safe.
 
-**Decision.** A rejection is stored against the idempotency key with its status code and
-body, the same as a success.
+## ADR 6. An unconfirmed outcome is a 503, never a failure
 
-**Consequences.** Retrying the same key returns the same refusal rather than re-running the
-transfer against a balance that may since have changed. The caller gets one stable answer per
-key, which is what makes a retry safe to issue blindly.
+If the connection drops after commit, the service cannot tell whether the money moved.
 
----
+Return `503` with `Retry-After` and an instruction to retry with the same `Idempotency-Key`.
 
-## ADR 6 — An outcome that cannot be confirmed is reported as `503`, never as a failure
+Reporting failure would tell the user money did not move when it may have. The transfer quota
+does not count a `503`, because retrying is the documented behavior.
 
-**Context.** If the service loses its connection after committing, it cannot tell whether the
-money moved.
+## ADR 7. The request fingerprint catches a reused key
 
-**Decision.** Return `503` with `Retry-After` and an instruction to retry **with the same
-Idempotency-Key**. Never report a failure when only the answer was lost.
+A key replayed with different details must not replay the earlier transfer.
 
-**Consequences.** This is the reason the idempotency design exists. Reporting failure would
-tell the user money did not move when it may have. The transfer quota does not count a `503`
-against the caller, because retrying is the documented behaviour rather than abuse.
+The claim stores a fingerprint of the normalized request. A matching fingerprint replays the
+stored answer. A different one is refused `409`.
 
----
+A `409` can never succeed, so the only route forward is a new key. The UI offers a new transfer
+rather than a retry.
 
-## ADR 7 — The request fingerprint identifies the details, so a reused key is caught
+## ADR 8. Only successful transfers are stored in `transfers`
 
-**Context.** A key replayed with different details must not replay the earlier transfer.
+The table holds transfers that happened. A rejection lives on the idempotency record.
 
-**Decision.** The claim stores a fingerprint of the request. A repeat with a matching
-fingerprint replays the stored answer; a repeat with a different one is refused `409`.
+Any row in `transfers` is money that moved, so reconciliation can sum the table without
+filtering. There is no pending or failed state to reason about.
 
-**Consequences.** A `409` can never succeed, so the client's only route forward is a new key.
-The UI reflects that: it offers a new transfer rather than a retry.
+## ADR 9. One system wallet may go negative and cannot be signed into
 
----
+Money has to enter the system from somewhere.
 
-## ADR 8 — Only successful transfers are stored in `transfers`
+A single funding wallet is exempt from the non-negative balance constraint. Its owner's
+password hash comes from random bytes nobody holds.
 
-**Context.** A rejected transfer could be stored with a status, or not stored at all.
+The system-wide total still sums to zero: what customers hold is what the funding wallet is
+down.
 
-**Decision.** The `transfers` table holds transfers that happened. A rejection lives on the
-idempotency record.
+`wallets_single_system` is load-bearing. It is the only thing stopping a customer wallet being
+relabeled as the system wallet, which would exempt it from the non-negative constraint and
+hide an overdraft.
 
-**Consequences.** Any row in `transfers` is money that moved, so reconciliation can sum the
-table without filtering. There is no "pending" or "failed" state to reason about.
+## ADR 10. Prisma for data access, raw SQL where locking requires it
 
----
+Row-level lock clauses are not expressible through the query builder.
 
-## ADR 9 — One system wallet may go negative, and nothing can sign into it
+Prisma owns the schema, migrations and ordinary queries. The locking reads are raw SQL.
 
-**Context.** Money has to enter the system from somewhere.
+Raw SQL resolves unqualified table names through `search_path`, so every raw query qualifies
+its schema explicitly. Getting this wrong once meant reconciliation read a different schema
+and reported it clean.
 
-**Decision.** A single funding wallet is exempt from the non-negative balance constraint. Its
-owner's password hash is derived from random bytes nobody holds.
+## ADR 11. Zod validates every request at the edge
 
-**Consequences.** The system-wide total still sums to zero: what customers hold is exactly
-what the funding wallet is down. `wallets_single_system` is load-bearing — it is the only
-thing stopping a customer wallet being relabelled as the system wallet, which would exempt it
-from the non-negative constraint and hide an overdraft.
+Schemas in `src/domain/` define the accepted shape. Middleware rejects anything else before a
+controller runs. Schemas use `strictObject`, so unknown fields are refused rather than ignored.
 
----
+Types come from `z.infer`, so the validator and the type cannot drift.
 
-## ADR 10 — Prisma for database access, with raw SQL where locking requires it
-
-**Context.** The service needs a typed data layer, but row-level lock clauses are not
-expressible through the query builder.
-
-**Decision.** Prisma owns the schema, migrations and ordinary queries. The locking reads are
-raw SQL.
-
-**Consequences.** Raw SQL resolves unqualified table names through `search_path`, so **every
-raw query qualifies its schema explicitly**. Getting this wrong once meant reconciliation
-read a different schema and reported it clean.
-
----
-
-## ADR 11 — Zod validates every request at the edge
-
-**Context.** Input validation could live in controllers, in the domain, or in a schema layer.
-
-**Decision.** Zod schemas in `src/domain/` define the accepted shape, and middleware rejects
-anything else before a controller runs. Schemas use `strictObject`, so unknown fields are
-refused rather than ignored.
-
-**Consequences.** Types come from `z.infer`, so the validator and the type cannot drift. Route
-parameters use the same bounded id schema as request bodies — an unbounded `BigInt()` on a
+Route parameters use the same bounded id schema as request bodies. An unbounded `BigInt()` on a
 well-formed but oversized id previously produced a `500` from PostgreSQL.
 
----
+## ADR 12. Request ids are generated by the server
 
-## ADR 12 — Server-generated request IDs, never read from the caller
+Correlating a user's report with a log line needs an identifier.
 
-**Context.** Correlating a user's report with a log line needs an identifier.
+The server generates a UUID per request and returns it in `X-Request-Id` and in every error
+body. A client-supplied `X-Request-Id` is ignored.
 
-**Decision.** The server generates a UUID per request and returns it in `X-Request-Id` and in
-every error body. A client-supplied `X-Request-Id` is ignored.
+A caller cannot poison the logs by sending the same id on every request. The id is assigned
+before body parsing, so a malformed body still produces a quotable id.
 
-**Consequences.** A caller cannot poison the logs by sending the same id on every request.
-The id is assigned before body parsing, so a malformed body still produces a quotable id.
+## ADR 13. Every error returns the same envelope
 
----
+Express's default error handler returns an HTML stack trace.
 
-## ADR 13 — Every error returns the same envelope
+All errors return `{ error: { code, message, requestId } }`. The code is stable and
+machine-readable. The message is for a person. Internals never reach the client.
 
-**Context.** Express's default error handler returns an HTML stack trace.
+Clients branch on `code`, not message text, so wording stays free to change. A transient
+database failure is classified and returned as `503` rather than `500`.
 
-**Decision.** All errors return `{ error: { code, message, requestId } }`. The code is stable
-and machine-readable; the message is for a person. Internals never reach the client.
+## ADR 14. A refusal is indistinguishable from absence
 
-**Consequences.** Clients branch on `code`, not on message text, so wording stays free to
-change. A transient database failure is classified and returned as `503` rather than `500`,
-so a client knows retrying is reasonable.
+Returning `403` for another customer's record confirms the record exists.
 
----
+A record belonging to someone else returns what a nonexistent id returns: same status, same
+code, same message. Only the request id differs.
 
-## ADR 14 — Refusals are indistinguishable from absence
+Ids cannot be enumerated. `403` is still used where the route is the thing being refused
+rather than the record.
 
-**Context.** Returning `403` for another customer's record confirms the record exists.
+## ADR 15. Privileged requests re-read role and blocked state
 
-**Decision.** A record belonging to someone else returns exactly what a nonexistent id
-returns — same status, same code, same message. Only the request id differs.
+A signed JWT carries whatever role it was issued with.
 
-**Consequences.** Ids cannot be enumerated. `403` is still used where the route, not the
-record, is the thing being refused: the caller is known and the route exists.
+`requireRole` reads the role and blocked flag from PostgreSQL on every privileged request.
 
----
+Blocking or demoting an account takes effect immediately instead of when the token expires. It
+costs one query per privileged request.
 
-## ADR 15 — Privileged requests re-read the current role and blocked state
+## ADR 16. The service logs JSON. The command-line tools do not
 
-**Context.** A signed JWT carries whatever role it was issued with.
+`pino` and `pino-http` for everything in the request path. `console.log` in `reconcile`, `seed`
+and `admin:password`.
 
-**Decision.** `requireRole` reads the role and blocked flag from PostgreSQL on every
-privileged request rather than trusting the token claim.
+Structured logging means JSON for output a machine filters and text for output a person reads.
+A reconciliation report is an aligned table for an operator at a terminal.
 
-**Consequences.** Blocking or demoting an account takes effect immediately instead of when
-the token expires. It costs one query per privileged request, which is the price of
-revocation that does not depend on token lifetime.
+Pretty-printing is chosen by `process.stdout.isTTY`. A terminal gets color; a pipe gets JSON.
 
----
-
-## ADR 16 — The service logs JSON; the command-line tools do not
-
-**Context.** The brief asks for structured logs carrying a request ID.
-
-**Decision.** `pino` and `pino-http` for everything in the request path. `console.log` stays
-in `reconcile`, `seed` and `admin:password`.
-
-**Consequences.** Structured logging is JSON for output a machine filters and text for output
-a person reads. A reconciliation report is an aligned table for an operator at a terminal;
-JSON would make its only audience worse off. Pretty-printing is chosen by
-`process.stdout.isTTY`, so a terminal gets colour and a pipe gets JSON with nothing
-configured.
-
-The `Authorization` header is redacted and request headers are dropped from the serialiser —
+The `Authorization` header is redacted and request headers are dropped from the serializer.
 `pino-http` logs the full header set by default, which would put bearer tokens in the logs.
 
-**Supersedes** an earlier decision to use `console` throughout.
+Supersedes an earlier decision to use `console` throughout.
 
----
+## ADR 17. Two login limits, because one cannot do both jobs
 
-## ADR 17 — Rate limits, and why each number is what it is
+Per minute: 60 transfers per caller, 240 reads per caller, 20 auth requests per IP, 10 login
+attempts per account and client, 60 login attempts per account, 30 admin requests per caller.
 
-**Context.** The service must resist abuse without refusing a reviewer demonstrating
-concurrency.
+A tight per-account limit on its own stops password guessing and also locks the owner out:
+ten wrong passwords a minute from anywhere and the real owner is refused. So the tight limit
+is per account and per client. Guessing from one place stays capped. Locking someone out would
+mean sending from their own address.
 
-**Decision.** Five limits, all per minute: transfers 60 per caller; reads 240 per caller;
-auth 20 per IP; login 10 per account **and** client; login 60 per account overall; admin 30
-per caller.
+The looser per-account ceiling bounds the bcrypt work one account can be made to do from many
+addresses. It sits far above anything a person does.
 
-**Consequences.** The two login limits do different jobs. A tight per-account limit alone
-hands anyone who knows your email address a lockout: ten wrong passwords a minute and the
-real owner is refused. Making the tight limit per account *and* per client means guessing
-from one place is capped while locking somebody out would require sending from their own
-address. The looser per-account ceiling caps total bcrypt work across many addresses.
-
-Transfers do not count a `503` — see ADR 6. The store is in memory, which is correct for one
+Transfers do not count a `503`; see ADR 6. The store is in memory, which is correct for one
 process and wrong for more than one.
 
----
+## ADR 18. The admin password is set by its own command
 
-## ADR 18 — The admin password is set by its own command and never published
+A deployed credential should not change because somebody ran the seed again.
 
-**Context.** The seed writes the admin account. A deployed credential should not change
-because somebody ran the seed again.
+The seed writes the admin password once and never resets it. `npm run admin:password` sets or
+rotates it.
 
-**Decision.** The seed writes the admin password once and never resets it. `npm run
-admin:password` is the deliberate path for setting or rotating it.
+The command requires `SEED_ADMIN_PASSWORD`. It refuses a value under twelve trimmed characters
+or over 72 bytes, because bcrypt ignores anything past 72. It refuses to touch a non-admin row
+and verifies by reading the hash back.
 
-**Consequences.** The command requires the variable, refuses a value under twelve trimmed
-characters or over 72 **bytes** — bcrypt silently ignores anything past 72 — refuses to touch
-a non-admin row, and verifies by reading the hash back.
+Demo customer passwords are the opposite case: published, and reset on every seed run so the
+database matches the documentation.
 
-Demo customer passwords are the opposite case on purpose: published, and reset on every seed
-run so the database always matches the documentation.
+## ADR 19. Neon rather than Render PostgreSQL
 
----
+A free Render database becomes inaccessible 30 days after creation.
 
-## ADR 19 — Neon rather than Render PostgreSQL
+Use Neon, which has no equivalent expiry. There is no deadline to track.
 
-**Context.** A free Render database becomes inaccessible 30 days after creation.
-
-**Decision.** Use Neon, which has no equivalent expiry.
-
-**Consequences.** There is no deadline to diary, and the database outlives any review window.
-Tests connect on Neon's **direct** endpoint, not the pooled one — a pooled connection leaks
+Tests connect on Neon's direct endpoint, not the pooled one. A pooled connection leaks
 `SET search_path` between sessions.
 
----
+## ADR 20. The repository is public, so a credential in it is a working credential
 
-## ADR 20 — The repository is public, and a credential in it is a real credential
+No credential belongs in any committed file, including seed data, tests, fixtures and
+documentation.
 
-**Context.** The repository is readable by anyone.
+This went wrong once. An admin password was published in the README and the live database was
+seeded with it. It has been rotated.
 
-**Decision.** No credential belongs in any committed file, including seed data, tests,
-fixtures and documentation.
-
-**Consequences.** This went wrong once: an admin password was published in the README and the
-live database was seeded with it. It was rotated. Scripts that act on a deployed service
-require their target and credentials to be supplied explicitly, with no defaults.
-
----
+Scripts that act on a deployed service are not committed, and require their target and
+credentials to be supplied explicitly.
 
 ## Superseded
 
-- **One entry file, no separate app module.** The app is now built in `app.ts` and started by
+- **One entry file, no separate app module.** The app is built in `app.ts` and started by
   `index.ts`. Splitting them lets integration tests mount the app without binding a port.
 - **`console` logging throughout.** Replaced by ADR 16.
-- **`trust proxy` fixed at 1.** Replaced by the configurable `TRUST_PROXY_HOPS`; see
+- **`trust proxy` fixed at 1.** Replaced by the configurable `TRUST_PROXY_HOPS`. See
   [known-limitations.md](known-limitations.md).

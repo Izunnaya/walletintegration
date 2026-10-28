@@ -11,9 +11,11 @@ coverage/
 
 /server/src/generated/
 
-# Working notes kept out of the published repository: interview preparation,
-# the long-form decision log and the open-questions scratchpad. The published
-# equivalents are docs/decisions.md and docs/known-limitations.md.
+# Internal tooling and its output. Not part of what the service ships.
+/server/scripts/audit-production.mjs
+/docs/production-audit-*.md
+
+# Working notes, kept out of the published repository.
 /DECISIONS.md
 /WALKTHROUGH.md
 /OPEN-QUESTIONS.md
