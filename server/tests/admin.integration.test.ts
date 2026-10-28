@@ -198,7 +198,7 @@ describe("blocking and unblocking", () => {
   });
 
   it("answers 404 for a user that does not exist, and for an id that is not one", async () => {
-    for (const id of ["999999999", "abc", "-1"]) {
+    for (const id of ["999999999", "abc", "-1", "0", "9223372036854775808"]) {
       const response = await restrict("block", id, adminToken, { reason: "no such user" });
       expect(response.status, id).toBe(404);
     }
@@ -206,6 +206,14 @@ describe("blocking and unblocking", () => {
 });
 
 describe("GET /admin/audit", () => {
+  it("denies a previously issued admin token after demotion or blocking", async () => {
+    const actor = await createUser("former-admin@example.com", "admin");
+    const headers = { Authorization: `Bearer ${actor.token}` };
+    await apiPrisma.user.update({ where: { id: actor.id }, data: { role: "customer" } });
+    expect((await fetch(`${baseUrl}/admin/audit`, { headers })).status).toBe(403);
+    await apiPrisma.user.update({ where: { id: actor.id }, data: { role: "admin", isBlocked: true } });
+    expect((await fetch(`${baseUrl}/admin/audit`, { headers })).status).toBe(403);
+  });
   it("returns the trail with actor, affected and reason, newest first", async () => {
     const response = await fetch(`${baseUrl}/admin/audit`, {
       headers: { Authorization: `Bearer ${adminToken}` },
@@ -227,5 +235,16 @@ describe("GET /admin/audit", () => {
     const ids = body.entries.map((entry) => BigInt(entry.id));
     const descending = [...ids].sort((a, b) => (a > b ? -1 : a < b ? 1 : 0));
     expect(ids).toEqual(descending);
+  });
+
+  it("bounds admin requests and supplies Retry-After when the quota is exhausted", async () => {
+    let limited: Response | undefined;
+    for (let count = 0; count < 31; count++) {
+      const response = await fetch(`${baseUrl}/admin/audit`, { headers: { Authorization: `Bearer ${adminToken}` } });
+      if (response.status === 429) { limited = response; break; }
+      expect(response.status).toBe(200);
+    }
+    expect(limited?.status).toBe(429);
+    expect(Number(limited?.headers.get("retry-after"))).toBeGreaterThan(0);
   });
 });

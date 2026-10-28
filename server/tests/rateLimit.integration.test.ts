@@ -10,6 +10,7 @@ vi.mock("../src/models/db.ts", async () => {
 });
 vi.hoisted(() => {
   process.env.JWT_SECRET = "ratelimit-integration-test-secret-not-for-production";
+  process.env.TRUST_PROXY_HOPS = "1";
 });
 import app from "../src/app.ts";
 
@@ -34,7 +35,7 @@ function login(ip: string, body?: unknown) {
   return fetch(`${baseUrl}/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Forwarded-For": ip },
-    body: JSON.stringify(body ?? { email: "nobody@example.com", password: "wrong password here" }),
+    body: JSON.stringify(body ?? {}),
   });
 }
 
@@ -74,6 +75,31 @@ afterAll(async () => {
 });
 
 describe("auth rate limit", () => {
+  it("limits one account across rotating IPs and normalized email variants", async () => {
+    for (let attempt = 0; attempt < 10; attempt++) {
+      const response = await login(`10.9.0.${attempt + 1}`, { email: "  TARGET@example.com ", password: "wrong password" });
+      expect(response.status).toBe(401);
+    }
+    const response = await login("10.9.1.1", { email: "target@example.com", password: "wrong password" });
+    expect(response.status).toBe(429);
+    expect(Number(response.headers.get("retry-after"))).toBeGreaterThan(0);
+    expect((await login("10.9.1.2", { email: "other@example.com", password: "wrong password" })).status).toBe(401);
+  });
+
+  it("aggregates IPv6 clients in the same /56 subnet", async () => {
+    for (let attempt = 0; attempt < AUTH_LIMIT; attempt++) {
+      expect((await login(`2001:db8:abcd:1200::${attempt + 1}`)).status).toBe(400);
+    }
+    expect((await login("2001:db8:abcd:12ff::ffff")).status).toBe(429);
+    expect((await login("2001:db8:abcd:1300::1")).status).toBe(400);
+  });
+
+  it("reuses the client bucket when spoofed addresses are prepended before the trusted proxy", async () => {
+    for (let attempt = 0; attempt < AUTH_LIMIT; attempt++) {
+      await login(`198.51.100.${attempt + 1}, 203.0.113.81`);
+    }
+    expect((await login("198.51.100.222, 203.0.113.81")).status).toBe(429);
+  });
   it("allows exactly the limit, then refuses with 429 and a stable error shape", async () => {
     const ip = "10.1.0.1";
     const statuses: number[] = [];
