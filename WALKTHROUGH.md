@@ -417,3 +417,14 @@ equals the one in the `X-Request-Id` response header; a 4xx logs at `warn` and a
 `authorization` field directly, independent of the serializer; `/health` produces
 no line; and an `Error` serialises to type, message and stack rather than the
 `{}` that `JSON.stringify` gives for one.
+
+
+## Frontend: screens backed by the real API
+
+The frontend now follows the Restaurant project's practical conventions: `pages/` compose screens, `api/` owns resource hooks, and `forms/<workflow>-form/` owns fields and validation. The existing animation, skeleton, toast and loading-button libraries remain in use. Money and intent comparisons are pure functions; network, storage and timers are explicit effects.
+
+Start with `frontend/src/api/client.ts` and `contracts.ts`: every response is validated by Zod, then resource hooks put it in TanStack Query. A page reads those hooks. It does not fetch directly. Query keys include the current user; signing in or out cancels reads and clears cached private data. Registration is public and returns to login because the backend does not issue a registration token. Backend permissions remain authoritative even though the UI hides admin routes from customers.
+
+The important financial path is `forms/transfer-form/`: `TransferForm.tsx` validates the recipient wallet ID and naira amount, `attempt.ts` compares and saves exact intents, and `useTransferAttempt.ts` coordinates review, send and recovery. Saving the original key and body happens before the request. Unknown outcomes must be checked using that same request; editing is locked until resolved. A known rejection permits a fresh intent. Browser tests exercise reload, navigation, 401, 429, network failure and switching accounts. This protects the frontend workflow; the server remains responsible for concurrent correctness and ledger atomicity.
+
+Unsupported demo features were removed: no role switcher, fake account directory, recipient names, notes, wallet statuses or invented monthly summaries. The admin supplies a user ID and audited reason, then can inspect the real audit log. Customers see their actual wallet, transfer history and receipts. CLI-only backend operations have no UI controls. See [frontend/README.md](frontend/README.md) for the endpoint map, session-storage tradeoff, recovery limits and test commands.
