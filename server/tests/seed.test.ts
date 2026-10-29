@@ -3,8 +3,7 @@ import type { Prisma } from "../src/generated/prisma/client.ts";
 import { testPrisma } from "./database.ts";
 import { applySeed } from "../src/models/seedData.ts";
 
-// The seed refuses to run against a non-local database without this, which is the guard
-// working: these tests run against a hosted one.
+// Test credentials work on local and hosted test databases.
 beforeAll(() => {
   process.env.SEED_ADMIN_PASSWORD = "seed-test-admin-password-not-for-production";
 });

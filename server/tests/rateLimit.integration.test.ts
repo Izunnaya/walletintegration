@@ -14,14 +14,6 @@ vi.hoisted(() => {
 });
 import app from "../src/app.ts";
 
-// The limiter keeps its counts in memory for the life of the process, so every test here
-// uses a distinct X-Forwarded-For address as its bucket. The app sets trust proxy to 1, so
-// that header is what the IP-keyed limiter reads — which is also what makes these tests
-// prove the trust-proxy setting works, not just the limits.
-//
-// Without a distinct address per test, one test filling a bucket would make the next fail
-// for reasons that have nothing to do with it.
-
 let server: Server | undefined;
 let baseUrl: string;
 
@@ -75,11 +67,6 @@ afterAll(async () => {
 });
 
 describe("auth rate limit", () => {
-  // This replaces a test that asserted ten failures from ten DIFFERENT addresses locked the
-  // account out from a fresh address. That was the behaviour, and it was a denial of service:
-  // anyone who knew an email address could keep its owner locked out for about ten requests a
-  // minute. The tight limit is per account AND per client now, so these two tests assert the
-  // guessing is still capped and the owner is not collateral.
   it("caps guessing one account from one client, and normalises the email", async () => {
     const client = "10.9.0.1";
 

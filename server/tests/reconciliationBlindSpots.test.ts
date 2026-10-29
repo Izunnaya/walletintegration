@@ -4,19 +4,6 @@ import { apiPrisma, apiSchema, prepareApiDatabase, closeApiDatabase, fundWallet 
 import { runReconciliation } from "../src/models/reconciliation.ts";
 import type { Check } from "../src/models/reconciliation.ts";
 
-// reconciliation.test.ts hands each check the damage it exists for and watches it
-// find it. This file asks the other half of the question: what damage gets through?
-//
-// That matters because these checks are the only evidence that the ledger is sound, and
-// what they do not look at is not looked at by anything. Every case below is damage a
-// reviewer would call fraud, applied with ordinary SQL, which reconciliation reports clean.
-// None of these are bugs in the checks as written - they are the shape of the gap, recorded
-// so the gap is a known one rather than an assumed absence.
-//
-// Same contract as the other reconciliation tests: damage goes in inside a transaction that
-// is always rolled back, every table is qualified explicitly because a raw query resolves an
-// unqualified name through search_path, and the fixture is rebuilt by the rollback.
-
 const namespace = Prisma.raw(`"${apiSchema}"`);
 
 let systemWalletId: bigint;
@@ -91,9 +78,6 @@ afterAll(async () => {
 });
 
 describe("the checks still find the damage they exist for", () => {
-  // Re-proved on this file's own fixture before anything is claimed about what the checks
-  // miss. A check that only worked on the fixture in reconciliation.test.ts would show up
-  // here, and a blind spot asserted against broken checks would mean nothing.
   it("passes on a sound database", async () => {
     const checks = await reconcileWithDamage();
     expect(checks.map((check) => check.name)).toEqual([
@@ -121,15 +105,6 @@ describe("the checks still find the damage they exist for", () => {
 
 describe("damage reconciliation cannot see after a database owner bypasses history protection", () => {
   it("does not see a committed transfer rewritten to a different amount", async () => {
-    // CONTRIBUTING says financial rows are never updated or deleted, and a correction is a
-    // new compensating entry. Nothing in the database enforces that: there is no trigger, no
-    // revoked UPDATE privilege and no append-only evidence such as a hash chain. So an
-    // UPDATE that moves a transfer, both of its entries and both balances together leaves a
-    // perfectly self-consistent ledger that says something different from what happened.
-    //
-    // This is the most important gap here. Reconciliation proves internal consistency; it
-    // cannot prove that the history was not rewritten, because a rewrite that keeps every
-    // identities true is indistinguishable from the truth.
     const checks = await reconcileWithDamage(async (client) => {
       const transferId = await transferIdOf(client, "fixture-ada-to-bode");
       const extra = 900n;
@@ -157,9 +132,6 @@ describe("damage reconciliation cannot see after a database owner bypasses histo
   });
 
   it("does not see a committed transfer reversed in direction", async () => {
-    // The same rewrite in its nastiest form: the money is taken from the party who received
-    // it and given to the party who sent it, by swapping the transfer's two wallet ids, the
-    // two entries' wallet ids, and both balances. Every identity holds afterwards.
     const checks = await reconcileWithDamage(async (client) => {
       const transferId = await transferIdOf(client, "fixture-ada-to-bode");
       const amount = 1000n;
@@ -188,9 +160,6 @@ describe("damage reconciliation cannot see after a database owner bypasses histo
   });
 
   it("does not see a transfer and its entries deleted outright", async () => {
-    // Deleting a transfer with its pair and unwinding both balances also keeps every
-    // identities. The money goes back where it came from and the record that it ever moved
-    // is gone - which is exactly the audit trail the ledger exists to be.
     const checks = await reconcileWithDamage(async (client) => {
       const transferId = await transferIdOf(client, "fixture-ada-to-bode");
       await client.$executeRaw`
@@ -210,14 +179,6 @@ describe("damage reconciliation cannot see after a database owner bypasses histo
   });
 
   it("catches a succeeded idempotency record whose stored answer is a lie", async () => {
-    // This one WAS a blind spot and is now check 7. It is kept here, flipped, because the
-    // damage is the reason the check exists and this is the only place that applies it.
-    //
-    // The stored response body is what a retry replays byte for byte, so it is part of the
-    // financial record: a caller who retries after a lost response is told this and will
-    // reconcile their own books against it. Every other check passes while it is wrong,
-    // because the ledger itself is perfectly consistent - the money moved correctly and
-    // only the receipt lies.
     const lie = JSON.stringify({ transfer: { id: "1", amountMinor: "999999999", currency: "NGN" } });
 
     const checks = await reconcileWithDamage(async (client) => {
@@ -247,11 +208,6 @@ describe("damage reconciliation cannot see after a database owner bypasses histo
   });
 
   it("does not see a second wallet opened for a customer who already has one", async () => {
-    // wallets_one_per_owner_currency stops a second NGN wallet, so this needs the constraint
-    // dropped inside the rolled-back transaction - the same technique reconciliation.test.ts
-    // uses for the non-negative balance. The point is the same: if the constraint were ever
-    // removed, nothing downstream would notice. A duplicate wallet splits a customer's money
-    // across two balances, and GET /wallets/me returns one of them.
     const checks = await reconcileWithDamage(async (client) => {
       await client.$executeRaw`
         ALTER TABLE ${namespace}.wallets DROP CONSTRAINT wallets_one_per_owner_currency
@@ -266,11 +222,6 @@ describe("damage reconciliation cannot see after a database owner bypasses histo
   });
 
   it("does not see a customer wallet relabelled as the system wallet", async () => {
-    // Check 5 exempts system wallets from the non-negative rule, and so does
-    // wallets_balance_non_negative. Flipping the flag on a customer wallet would therefore
-    // hide an overdraft from both - except that wallets_single_system, a partial unique
-    // index, allows only one. That index is load-bearing for check 5 and nothing says so, so
-    // this asserts first that the index is what refuses the relabelling.
     let refusal: unknown;
     await reconcileWithDamage(async (client) => {
       await client.$executeRaw`
@@ -281,10 +232,6 @@ describe("damage reconciliation cannot see after a database owner bypasses histo
     });
     expect(String(refusal)).toMatch(/wallets_single_system|unique/i);
 
-    // With the index gone, the overdraft is invisible: the constraint permits it because the
-    // wallet claims to be a system wallet, and check 5 skips it for the same reason. The
-    // funding transfer is rewritten alongside it so the other five checks have nothing to
-    // say, which is what makes this a blind spot rather than a noisy failure.
     const checks = await reconcileWithDamage(async (client) => {
       await client.$executeRaw`DROP INDEX ${namespace}.wallets_single_system`;
       const transferId = await transferIdOf(client, "fixture-ada");

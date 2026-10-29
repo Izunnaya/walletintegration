@@ -22,9 +22,6 @@ export async function prepareAuthDatabase() {
 
   const client = await pool.connect();
   try {
-    // One transaction, so a migration that fails part way leaves no schema at all rather
-    // than a half-built one the next run would trip over. SET LOCAL scopes the search_path
-    // to this transaction, so nothing has to reset it afterwards.
     await client.query("BEGIN");
     await client.query(`CREATE SCHEMA "${authSchema}"`);
     await client.query(`SET LOCAL search_path TO "${authSchema}"`);

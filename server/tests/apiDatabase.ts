@@ -5,11 +5,6 @@ import { readFile, readdir } from "node:fs/promises";
 import { Pool } from "pg";
 import { createDatabaseClient } from "../src/models/databaseClient.ts";
 
-// A schema of its own for the history, admin and rate-limit tests, created from the real
-// migration and dropped afterwards. They write committed rows — a blocked user, an audit
-// entry — so they cannot share a schema with anything else, and rolling back is not an
-// option when the point is to prove a commit happened.
-
 export const apiSchema = `wallet_api_test_${randomUUID().replaceAll("-", "")}`;
 
 const url = testDatabaseUrl(process.env.TEST_DATABASE_URL, apiSchema);
@@ -67,9 +62,6 @@ export async function closeApiDatabase() {
   }
 }
 
-// Money is moved the way the service moves it: a transfer row, two signed ledger entries and
-// both balances. Writing a balance directly would leave the fixtures failing the very
-// reconciliation the tests rely on.
 export async function fundWallet(walletId: bigint, fromWalletId: bigint, amountMinor: bigint, reference: string) {
   await apiPrisma.$transaction(async (client) => {
     const transfer = await client.transfer.create({

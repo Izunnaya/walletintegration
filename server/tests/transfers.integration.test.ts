@@ -168,9 +168,6 @@ describe("atomic, idempotent transfers over HTTP", () => {
 
   it("twenty concurrent duplicate keys create exactly one transfer and one ledger pair", async () => {
     const source = await account(); const destination = await account(0n); const key = randomUUID();
-    // Twenty at once, with every other request naming the wallets by their public id rather
-    // than their numeric one. Both representations must resolve to the same idempotency
-    // record, or a client that switched form would be able to send the transfer twice.
     const responses = await Promise.all(
       Array.from({ length: 20 }, (_, index) =>
         send(
