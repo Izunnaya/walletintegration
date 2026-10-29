@@ -1,261 +1,141 @@
-# Architecture decisions
+# Design decisions
 
-Why the service is built this way, and what each choice costs. Read the relevant entry before
-changing one of these. Superseded entries are kept and marked.
+These are the choices behind the code. The numbers stay stable so other docs can
+refer to them.
 
-## ADR 1. Money is whole kobo in bigint, and a string in JSON
+## ADR 1. Money stays exact
 
-NGN amounts need exact arithmetic. A JSON number is an IEEE 754 double and stops being exact
-above the safe integer range.
+Store whole kobo as PostgreSQL `BIGINT`, use `bigint` in code and send strings in
+JSON. `"150000"` means NGN 1,500. This avoids rounding money through floating-point numbers.
 
-Money is an integer count of kobo. Stored in `BIGINT`, held as `bigint`, serialized as a
-string. `₦1,500.00` is `"150000"`.
+## ADR 2. Transactions use explicit locks
 
-Every arithmetic path uses `bigint`, never `Number`. Clients parse the string. Formatting
-happens at the edge only.
+Use `READ COMMITTED` and lock the rows being changed. The transfer reads balances
+and restrictions after taking those locks, so parallel requests see the right state.
 
-## ADR 2. READ COMMITTED with explicit row locks, not SERIALIZABLE
+## ADR 3. Lock users before wallets
 
-Concurrent transfers on the same wallet must not interleave into a wrong balance.
+Within each group, lock IDs in ascending order. All money and restriction paths
+must follow this order. Users use `FOR NO KEY UPDATE`, which allows the foreign-key
+check made by an idempotency claim. Wallets use `FOR UPDATE`.
 
-Keep PostgreSQL's default `READ COMMITTED`. Lock the rows a transfer touches.
+## ADR 4. Save the idempotency result with the money
 
-Correctness is visible in the code instead of depending on the planner raising a serialization
-error. The locking becomes the service's responsibility, which is what ADR 3 covers.
+The key, transfer, ledger entries and balances belong to one transaction. They
+commit together or roll back together. A failed transaction cannot leave a stranded key.
 
-## ADR 3. Lock users first, then wallets, each in sorted id order
+## ADR 5. Save business rejections too
 
-Two transfers moving money in opposite directions between the same two wallets deadlock if
-they lock in different orders.
+Insufficient funds is a known result. Save it against the key so retries give the
+same answer, even if the balance changes later. A new payment needs a new key.
 
-A transfer locks user rows before wallet rows. Within each group it orders by `id`. Users take
-`FOR NO KEY UPDATE`; wallets take `FOR UPDATE`.
+## ADR 6. An uncertain transfer needs the same key
 
-Deadlock is prevented by ordering, not detected and retried. Any new query that locks these
-tables must use the same order.
+A lost response may happen after the money moved. Return `503` for a known temporary
+or uncertain database outcome and ask the caller to retry the same details and key.
+Do not report that no money moved when that is unknown.
 
-`FOR NO KEY UPDATE` on users does not conflict with the `FOR KEY SHARE` the idempotency
-record's foreign key takes, so claiming a key and then locking the user cannot self-deadlock.
+## ADR 7. Compare the details behind a key
 
-The ordering comes from one statement that selects users through a subquery on wallets.
-PostgreSQL places `LockRows` above the `Sort`, so rows are still locked in ascending id order.
-Verified with `EXPLAIN` and covered by a concurrency test that reads
-`pg_stat_database.deadlocks`.
+`fingerprintTransfer` hashes the normalized transfer details. This is a request hash,
+not a biometric or browser fingerprint. Matching details replay the saved result;
+different details return `409`. Resolve public wallet IDs before hashing so numeric
+and public IDs for the same wallet represent the same payment.
 
-## ADR 4. The idempotency record is written inside the transfer transaction
+## ADR 8. The transfers table contains completed movements
 
-A client retrying after a lost response must not move money twice.
+Business rejections live in idempotency records. Each transfer has one debit and one
+credit. Database triggers refuse updates and deletes on transfers and ledger entries.
+Corrections must be new records. Database owners can bypass triggers, so deployment
+still needs a restricted application role.
 
-The key is claimed with `INSERT ... ON CONFLICT DO NOTHING` inside the transaction that moves
-the money, before the balances change.
+## ADR 9. Demo funding uses one system wallet
 
-The claim and the money commit or roll back together. A failed transfer leaves no claim, so
-the key is reusable as a first attempt. A claim that exists always corresponds to a real
-outcome. Claiming first in a separate transaction can strand a key against a transfer that
-never happened.
+Only the system wallet may go negative. Its owner has a random, unusable password,
+and the transfer API refuses system-wallet transfers. Seeding funds customers through
+real transfers, keeping the total balance at zero. A partial unique index permits
+only one system wallet.
 
-## ADR 5. A business rejection is committed as the key's result
+## ADR 10. Prisma owns normal database access
 
-An insufficient-funds refusal is an answer, not a system failure.
+Use Prisma for models, queries and migrations. Keep raw SQL for row locks and reports
+that need it. Qualify raw SQL with the configured schema. Pass the same transaction
+client to every operation that must commit together.
 
-A rejection is stored against the key with its status code and body, the same as a success.
+## ADR 11. Zod defines request shapes
 
-Retrying returns the same refusal instead of re-running the transfer against a balance that
-may have changed. One stable answer per key is what makes a blind retry safe.
+Validate input before controller work and infer types from schemas. Reject unknown
+fields. Domain functions stay pure; the service supplies current, locked database state.
 
-## ADR 6. An unconfirmed outcome is a 503, never a failure
+## ADR 12. Generate request IDs on the server
 
-If the connection drops after commit, the service cannot tell whether the money moved.
+Each request gets a UUID for matching a response to a log. Ignore incoming request
+IDs. Keep them in diagnostic data, out of normal frontend alerts and notifications.
 
-Return `503` with `Retry-After` and an instruction to retry with the same `Idempotency-Key`.
+## ADR 13. Use one error shape
 
-Reporting failure would tell the user money did not move when it may have. The transfer quota
-does not count a `503`, because retrying is the documented behavior.
+Return `{ error: { code, message, requestId } }`, with field details when useful.
+Clients use the code; people read the message. Never return SQL, stack traces or
+server paths. Error middleware covers failures outside controllers too.
 
-## ADR 7. The request fingerprint catches a reused key
+## ADR 14. Keep private records private
 
-A key replayed with different details must not replay the earlier transfer.
+Wallet reads use the signed-in user's ID. Transfer queries filter by ownership.
+A missing transfer and another user's transfer both return `404`.
 
-The claim stores a fingerprint of the normalized request. A matching fingerprint replays the
-stored answer. A different one is refused `409`.
+## ADR 15. Check current admin access
 
-A `409` can never succeed, so the only route forward is a new key. The UI offers a new transfer
-rather than a retry.
+Middleware reads the current role and blocked flag. Restriction writes check them
+again after locking the admin and target user. The change and audit entry commit
+together. An admin cannot block themselves.
 
-## ADR 8. Only successful transfers are stored in `transfers`
+## ADR 16. Keep logs useful and private
 
-The table holds transfers that happened. A rejection lives on the idempotency record.
+Use Pino for request logs, with JSON output when piped. Command-line reports use
+plain text. Log request metadata and errors, never passwords, tokens or request bodies.
 
-Any row in `transfers` is money that moved, so reconciliation can sum the table without
-filtering. There is no pending or failed state to reason about.
+## ADR 17. Apply separate rate limits
 
-## ADR 9. One system wallet may go negative and cannot be signed into
+Each minute allows 20 auth requests per IP, 10 login attempts per account and IP,
+60 login attempts per account, 60 transfers per caller, 240 reads per caller and
+30 admin requests per caller. Transfer `503` responses do not consume transfer quota.
 
-Money has to enter the system from somewhere.
+Honor `Retry-After`. These limits reduce guessing and load, but a distributed attacker
+can still exhaust an account's allowance. Counters are per process; use a shared store
+before adding replicas. Proxy trust must match the deployed network.
 
-A single funding wallet is exempt from the non-negative balance constraint. Its owner's
-password hash comes from random bytes nobody holds.
+## ADR 18. Set admin passwords deliberately
 
-The system-wide total still sums to zero: what customers hold is what the funding wallet is
-down.
+Seeding and registration use the same password requirements. Seeding writes the admin
+password once; `admin:password` changes it explicitly. Demo customer passwords are
+public fixtures and reset on each seed run. Never use those accounts for real funds.
 
-`wallets_single_system` is load-bearing. It is the only thing stopping a customer wallet being
-relabeled as the system wallet, which would exempt it from the non-negative constraint and
-hide an overdraft.
+## ADR 19. Keep database hosting separate from application code
 
-## ADR 10. Prisma for data access, raw SQL where locking requires it
+The current deployment uses Neon and Render. The application uses PostgreSQL through
+Prisma, so hosting can change without changing the money rules. Schema-scoped tests
+use a direct database connection.
 
-Row-level lock clauses are not expressible through the query builder.
+## ADR 20. Keep credentials out of Git
 
-Prisma owns the schema, migrations and ordinary queries. The locking reads are raw SQL.
+Use environment variables for secrets. Examples contain placeholders; test credentials
+work only in disposable fixtures. Rotate any real credential exposed in source or logs.
 
-Raw SQL resolves unqualified table names through `search_path`, so every raw query qualifies
-its schema explicitly. Getting this wrong once meant reconciliation read a different schema
-and reported it clean.
+## ADR 21. Separate public wallet IDs from database keys
 
-## ADR 11. Zod validates every request at the edge
+Wallets have stable `wlt_` IDs generated by PostgreSQL. Numeric keys remain for relations
+and older clients. The frontend prefers public IDs but preserves saved numeric attempts.
+Public IDs are identifiers, not permission to use a wallet.
 
-Schemas in `src/domain/` define the accepted shape. Middleware rejects anything else before a
-controller runs. Schemas use `strictObject`, so unknown fields are refused rather than ignored.
+## ADR 22. Isolate database tests
 
-Types come from `z.infer`, so the validator and the type cannot drift.
+Direct test runs require `TEST_DATABASE_URL` with a `wallet_test_` schema.
+`verify:prisma` creates and removes a temporary schema, then runs migrations, tests
+and seed checks there. Set both Prisma's schema and raw SQL's search path; setting
+only one leaves part of the test outside its intended schema.
 
-Route parameters use the same bounded id schema as request bodies. An unbounded `BigInt()` on a
-well-formed but oversized id previously produced a `500` from PostgreSQL.
+## ADR 23. Organize the frontend around workflows
 
-## ADR 12. Request ids are generated by the server
-
-Correlating a user's report with a log line needs an identifier.
-
-The server generates a UUID per request and returns it in `X-Request-Id` and in every error
-body. A client-supplied `X-Request-Id` is ignored.
-
-A caller cannot poison the logs by sending the same id on every request. The id is assigned
-before body parsing, so a malformed body still produces a quotable id.
-
-## ADR 13. Every error returns the same envelope
-
-Express's default error handler returns an HTML stack trace.
-
-All errors return `{ error: { code, message, requestId } }`. The code is stable and
-machine-readable. The message is for a person. Internals never reach the client.
-
-Clients branch on `code`, not message text, so wording stays free to change. A transient
-database failure is classified and returned as `503` rather than `500`.
-
-## ADR 14. A refusal is indistinguishable from absence
-
-Returning `403` for another customer's record confirms the record exists.
-
-A record belonging to someone else returns what a nonexistent id returns: same status, same
-code, same message. Only the request id differs.
-
-Ids cannot be enumerated. `403` is still used where the route is the thing being refused
-rather than the record.
-
-## ADR 15. Privileged requests re-read role and blocked state
-
-A signed JWT carries whatever role it was issued with.
-
-`requireRole` reads the role and blocked flag from PostgreSQL on every privileged request.
-
-Blocking or demoting an account takes effect immediately instead of when the token expires. It
-costs one query per privileged request.
-
-## ADR 16. The service logs JSON. The command-line tools do not
-
-`pino` and `pino-http` for everything in the request path. `console.log` in `reconcile`, `seed`
-and `admin:password`.
-
-Structured logging means JSON for output a machine filters and text for output a person reads.
-A reconciliation report is an aligned table for an operator at a terminal.
-
-Pretty-printing is chosen by `process.stdout.isTTY`. A terminal gets color; a pipe gets JSON.
-
-The `Authorization` header is redacted and request headers are dropped from the serializer.
-`pino-http` logs the full header set by default, which would put bearer tokens in the logs.
-
-Supersedes an earlier decision to use `console` throughout.
-
-## ADR 17. Two login limits, because one cannot do both jobs
-
-Per minute: 60 transfers per caller, 240 reads per caller, 20 auth requests per IP, 10 login
-attempts per account and client, 60 login attempts per account, 30 admin requests per caller.
-
-A tight per-account limit on its own stops password guessing and also locks the owner out:
-ten wrong passwords a minute from anywhere and the real owner is refused. So the tight limit
-is per account and per client. Guessing from one place stays capped. Locking someone out would
-mean sending from their own address.
-
-The looser per-account ceiling bounds the bcrypt work one account can be made to do from many
-addresses. It sits far above anything a person does.
-
-Transfers do not count a `503`; see ADR 6. The store is in memory, which is correct for one
-process and wrong for more than one.
-
-## ADR 18. The admin password is set by its own command
-
-A deployed credential should not change because somebody ran the seed again.
-
-The seed writes the admin password once and never resets it. `npm run admin:password` sets or
-rotates it.
-
-The command requires `SEED_ADMIN_PASSWORD`. It refuses a value under twelve trimmed characters
-or over 72 bytes, because bcrypt ignores anything past 72. It refuses to touch a non-admin row
-and verifies by reading the hash back.
-
-Demo customer passwords are the opposite case: published, and reset on every seed run so the
-database matches the documentation.
-
-## ADR 19. Neon rather than Render PostgreSQL
-
-A free Render database becomes inaccessible 30 days after creation.
-
-Use Neon, which has no equivalent expiry. There is no deadline to track.
-
-Tests connect on Neon's direct endpoint, not the pooled one. A pooled connection leaks
-`SET search_path` between sessions.
-
-## ADR 20. The repository is public, so a credential in it is a working credential
-
-No credential belongs in any committed file, including seed data, tests, fixtures and
-documentation.
-
-This went wrong once. An admin password was published in the README and the live database was
-seeded with it. It has been rotated.
-
-Scripts that act on a deployed service are not committed, and require their target and
-credentials to be supplied explicitly.
-
-## ADR 21. Wallets carry a public id, and keep their numeric key
-
-A wallet id appears in a URL, on a screen and in a copied string. A sequential integer key
-leaks how many wallets exist and invites guessing at neighbors.
-
-Every wallet has a persisted `public_id`: `wlt_` followed by 32 lowercase hex characters,
-generated by PostgreSQL and uniquely indexed, with a `CHECK` on the format. The numeric
-primary key stays, and every ledger and transfer foreign key still uses it.
-
-Wallet responses add `publicId`. Transfer responses add `sourceWalletPublicId` and
-`destinationWalletPublicId`. `POST /transfers` accepts either representation.
-
-A public id resolves to the internal key **before** the fingerprint is computed and before the
-locks are taken. Without that, the same key sent once with a numeric id and once with a public
-id would fingerprint differently and send the money twice. A concurrency test sends twenty
-simultaneous requests under one key, alternating the two representations, and asserts one
-transfer and one ledger pair.
-
-The migration is additive and safe to rerun: `ADD COLUMN IF NOT EXISTS` with a default that
-generates an id for existing rows. Nothing is rewritten and no identifier is regenerated.
-
-A response stored against an idempotency key before this existed replays unchanged, so it will
-not carry the public id fields. The migration and the API have to be deployed before a client
-can rely on them.
-
-## Superseded
-
-- **One entry file, no separate app module.** The app is built in `app.ts` and started by
-  `index.ts`. Splitting them lets integration tests mount the app without binding a port.
-- **`console` logging throughout.** Replaced by ADR 16.
-- **`trust proxy` fixed at 1.** Replaced by the configurable `TRUST_PROXY_HOPS`. See
-  [known-limitations.md](known-limitations.md).
+Keep screens in `pages/`, forms under their workflow and API hooks by resource.
+Use the installed query, form, loading and animation libraries. Save an unresolved
+transfer before sending and reuse its exact key during recovery. See [frontend.md](frontend.md).
