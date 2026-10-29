@@ -3,20 +3,10 @@ import { Prisma } from "../generated/prisma/client.ts";
 import { hashPassword } from "./password.ts";
 import { registerRequestSchema } from "../domain/authRequest.ts";
 
-// The demo customers' password is published in the README, so it is reset on every run.
-// Keeping it in step with the documentation is the whole point of a fixture account, and
-// nothing of value is protected by it.
+// Published demo passwords are reset on each seed run.
 export const DEMO_CUSTOMER_PASSWORD = "demo-password-2026";
 
-// The admin password is a real credential, so it is written once and never reset: the build
-// spec is explicit that a deployed admin password changes deliberately, not because somebody
-// ran the seed again. npm run admin:password is the deliberate path.
-//
-// The fallback below exists only so a fresh laptop database has a usable admin without
-// configuration, and seeding any non-local database without SEED_ADMIN_PASSWORD is refused
-// outright. It is named as unsafe rather than looking like a real password, because an
-// earlier version of this value was published in the README and ended up on the live
-// database.
+// Seed the admin password once. Only local development has a fallback.
 export const DEFAULT_LOCAL_ADMIN_PASSWORD = "local-development-only-change-me";
 
 function adminPassword(): string {
@@ -56,9 +46,6 @@ const BLACKLISTED = [
   { email: "fraudster@example.com", reason: "Seeded to demonstrate registration being refused" },
 ];
 
-// resetPassword is false for the admin and the funding account, so rerunning the seed
-// cannot change a credential that matters. It is true for the demo customers, whose
-// password is published, so the database always matches the README.
 async function ensureUser(
   client: Prisma.TransactionClient,
   email: string,

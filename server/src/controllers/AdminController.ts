@@ -6,18 +6,7 @@ import type { RestrictionRequest } from "../domain/restrictionRequest.ts";
 import { databaseIdSchema } from "../domain/transferRequest.ts";
 import { classifyTransactionError } from "../models/transactionErrors.ts";
 
-// Blocking and unblocking, each committed together with its audit row.
-//
-// Two things make this more than an UPDATE.
-//
-// It takes the same user row lock, in the same order, that a transfer takes. That is what
-// makes blocking and transferring serialise: whichever acquires the lock first decides. A
-// block committed first causes a waiting transfer to be rejected; a transfer already holding
-// the lock completes before the block applies. Either is correct. What must not happen is
-// the two interleaving, which is what an unlocked UPDATE would allow.
-//
-// The restriction change and the audit entry are written in one transaction, so a
-// restriction cannot exist without a record of who made it and why.
+// Lock the actor and target, recheck permission, then save the change and audit entry together.
 
 function refuse(res: Response, req: Request, status: number, code: string, message: string) {
   res.status(status).json({
@@ -41,8 +30,6 @@ async function applyRestriction(
 
   const affectedId = requested.data;
 
-  // An admin blocking themselves would lock themselves out with no way back, since only an
-  // admin can unblock. Refused rather than left as a trap.
   if (affectedId === actor.userId) {
     refuse(res, req, 422, "CANNOT_RESTRICT_SELF", "An admin cannot change their own access.");
     return;
@@ -55,7 +42,6 @@ async function applyRestriction(
       async (client) => {
         await client.$executeRaw`SET LOCAL lock_timeout = '5s'`;
 
-        // The same lock a transfer takes on this row, so the two serialise.
         const users = await lockUsersForRestriction(client, [actor.userId, affectedId]);
         const currentActor = users.find((user) => user.id === actor.userId);
         if (!currentActor || currentActor.role !== "admin" || currentActor.isBlocked) {
@@ -64,8 +50,7 @@ async function applyRestriction(
         const locked = users.find((user) => user.id === affectedId);
         if (!locked) return null;
 
-        // Already in the requested state: the audit trail records attempts that changed
-        // something, so this writes nothing and reports the current state.
+        // Record changes only; a repeated request leaves no extra audit entry.
         if (locked.isBlocked === isBlocked) {
           return { user: locked, changed: false };
         }
@@ -109,17 +94,12 @@ async function applyRestriction(
         isBlocked: changed.user.isBlocked,
       },
       changed: changed.changed,
-      // Said plainly, because it is the rule most likely to surprise an admin who has just
-      // unblocked someone and found they still cannot transfer.
       note:
         action === "unblock"
           ? "Unblocking does not lift a blacklist restriction."
           : undefined,
     });
   } catch (error) {
-    // A lock timeout means a transfer is holding this user row right now. That is the
-    // serialisation working, not a failure, and the honest answer is to say so and let the
-    // admin try again rather than to wait indefinitely.
     if (classifyTransactionError(error) !== "unexpected") {
       res.setHeader("Retry-After", "1");
       refuse(
