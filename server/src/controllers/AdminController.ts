@@ -1,7 +1,7 @@
 import type { Request, Response } from "express";
 import { Prisma } from "../generated/prisma/client.ts";
 import { prisma } from "../models/db.ts";
-import { lockUserForRestriction } from "../models/transferLocks.ts";
+import { lockUsersForRestriction } from "../models/transferLocks.ts";
 import type { RestrictionRequest } from "../domain/restrictionRequest.ts";
 import { databaseIdSchema } from "../domain/transferRequest.ts";
 import { classifyTransactionError } from "../models/transactionErrors.ts";
@@ -56,7 +56,12 @@ async function applyRestriction(
         await client.$executeRaw`SET LOCAL lock_timeout = '5s'`;
 
         // The same lock a transfer takes on this row, so the two serialise.
-        const locked = await lockUserForRestriction(client, affectedId);
+        const users = await lockUsersForRestriction(client, [actor.userId, affectedId]);
+        const currentActor = users.find((user) => user.id === actor.userId);
+        if (!currentActor || currentActor.role !== "admin" || currentActor.isBlocked) {
+          return { forbidden: true as const };
+        }
+        const locked = users.find((user) => user.id === affectedId);
         if (!locked) return null;
 
         // Already in the requested state: the audit trail records attempts that changed
@@ -87,6 +92,11 @@ async function applyRestriction(
 
     if (changed === null) {
       refuse(res, req, 404, "USER_NOT_FOUND", "No such user.");
+      return;
+    }
+
+    if ("forbidden" in changed) {
+      refuse(res, req, 403, "FORBIDDEN", "Admin access is required.");
       return;
     }
 

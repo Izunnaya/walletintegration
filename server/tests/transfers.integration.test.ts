@@ -99,6 +99,25 @@ async function waitForBlockedQuery(blockerPid: number) {
 }
 
 describe("atomic, idempotent transfers over HTTP", () => {
+  it("saves and replays a rejection when neither public wallet exists", async () => {
+    const owner = await account();
+    const key = randomUUID();
+    const request = {
+      sourceWalletId: `wlt_${"0".repeat(32)}`,
+      destinationWalletId: `wlt_${"f".repeat(32)}`,
+      amountMinor: "100", currency: "NGN",
+    };
+    const first = await send(owner.token, request, key);
+    const replay = await send(owner.token, request, key);
+    expect(first.status).toBe(404);
+    expect(first.body.error.code).toBe("WALLET_NOT_FOUND");
+    expect(replay.status).toBe(404);
+    expect(replay.body).toEqual(first.body);
+    expect(await balance(owner)).toBe(1000n);
+    expect(await authPrisma.transfer.count({ where: { sourceWalletId: owner.walletId } })).toBe(0);
+    await assertBooksBalance();
+  });
+
   it("public IDs resolve to existing wallets and share idempotency with numeric IDs", async () => {
     const source = await account(); const destination = await account(0n); const key = randomUUID();
     expect(source.publicId).toMatch(/^wlt_[0-9a-f]{32}$/);
