@@ -18,7 +18,8 @@ const pool = new Pool({
   connectionTimeoutMillis: 10000,
 });
 const schema = `wallet_test_${randomUUID().replaceAll("-", "")}`;
-const testUrl = new URL(url);
+const testUrl = new URL(connectionString);
+testUrl.hostname = url.hostname;
 testUrl.searchParams.set("schema", schema);
 testUrl.searchParams.set("options", `-c search_path=${schema}`);
 
