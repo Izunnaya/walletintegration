@@ -11,7 +11,7 @@ export default defineConfig({
     // The service logs one JSON line per request, which would bury the test output in a
     // few hundred of them. The logger tests are unaffected: they build their own logger at
     // info level writing into an array, which is the only place log output is asserted on.
-    env: { LOG_LEVEL: "silent" },
+    env: { LOG_LEVEL: "silent", JWT_SECRET: "wallet-test-signing-secret-not-for-production" },
 
     // The database is hosted, so every query is a round trip, and bcrypt at cost 12 adds
     // a quarter of a second per hash on top. The seed repeatability tests run the whole

@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { testDatabaseUrl } from "./testDatabaseUrl.ts";
 import { randomUUID } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import { pool } from "./database.ts";
@@ -6,11 +7,7 @@ import { createDatabaseClient } from "../src/models/databaseClient.ts";
 
 // Only this generated schema is created, modified and removed by the HTTP tests.
 export const authSchema = `wallet_auth_test_${randomUUID().replaceAll("-", "")}`;
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) throw new Error("DATABASE_URL is required for auth integration tests.");
-const url = new URL(connectionString);
-url.hostname = url.hostname.replace("-pooler", "");
-url.searchParams.set("schema", authSchema);
+const url = testDatabaseUrl(process.env.TEST_DATABASE_URL, authSchema);
 export const authPrisma = createDatabaseClient(url.toString(), {
   // Generous, because the tests reach a hosted database across a VPN and Prisma's default
   // two second maxWait is shorter than a single round trip under load.
