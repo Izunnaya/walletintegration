@@ -1,21 +1,12 @@
 import { randomBytes } from "node:crypto";
 import { Prisma } from "../generated/prisma/client.ts";
 import { hashPassword } from "./password.ts";
+import { registerRequestSchema } from "../domain/authRequest.ts";
 
-// The demo customers' password is published in the README, so it is reset on every run.
-// Keeping it in step with the documentation is the whole point of a fixture account, and
-// nothing of value is protected by it.
+// Published demo passwords are reset on each seed run.
 export const DEMO_CUSTOMER_PASSWORD = "demo-password-2026";
 
-// The admin password is a real credential, so it is written once and never reset: the build
-// spec is explicit that a deployed admin password changes deliberately, not because somebody
-// ran the seed again. npm run admin:password is the deliberate path.
-//
-// The fallback below exists only so a fresh laptop database has a usable admin without
-// configuration, and seeding any non-local database without SEED_ADMIN_PASSWORD is refused
-// outright. It is named as unsafe rather than looking like a real password, because an
-// earlier version of this value was published in the README and ended up on the live
-// database.
+// Seed the admin password once. Only local development has a fallback.
 export const DEFAULT_LOCAL_ADMIN_PASSWORD = "local-development-only-change-me";
 
 function adminPassword(): string {
@@ -29,8 +20,8 @@ function adminPassword(): string {
     return DEFAULT_LOCAL_ADMIN_PASSWORD;
   }
 
-  if (configured.length === 0 || Buffer.byteLength(configured, "utf8") > 72) {
-    throw new Error("SEED_ADMIN_PASSWORD must be non-empty and at most 72 UTF-8 bytes.");
+  if (!registerRequestSchema.shape.password.safeParse(configured).success) {
+    throw new Error("SEED_ADMIN_PASSWORD must meet the registration password requirements.");
   }
   return configured;
 }
@@ -55,9 +46,6 @@ const BLACKLISTED = [
   { email: "fraudster@example.com", reason: "Seeded to demonstrate registration being refused" },
 ];
 
-// resetPassword is false for the admin and the funding account, so rerunning the seed
-// cannot change a credential that matters. It is true for the demo customers, whose
-// password is published, so the database always matches the README.
 async function ensureUser(
   client: Prisma.TransactionClient,
   email: string,
@@ -167,13 +155,14 @@ export async function reportState(client: Prisma.TransactionClient, schema: stri
 
 // The caller owns the transaction; all writes use its Prisma transaction client.
 export async function applySeed(client: Prisma.TransactionClient) {
+  const configuredAdminPassword = adminPassword();
   const systemWallet = await ensureSystemWallet(client);
   const admin = await ensureUser(
     client,
     ADMIN_EMAIL,
     "Wallet Admin",
     "admin",
-    await hashPassword(adminPassword()),
+    await hashPassword(configuredAdminPassword),
   );
   await ensureWallet(client, admin.id);
 

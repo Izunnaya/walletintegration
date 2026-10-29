@@ -1,7 +1,7 @@
 # Deployment
 
-The API deploys to Render. The database is Neon. Both are free tiers. See
-[ADR 19](decisions.md) for why the database is not Render PostgreSQL.
+The API is configured for Render and PostgreSQL on Neon. Check the current hosting
+plan before relying on deployment or scaling features.
 
 ## Setup
 
@@ -36,10 +36,10 @@ The API deploys to Render. The database is Neon. Both are free tiers. See
    `TRUST_PROXY_HOPS` needs the real hop count from the ingress logs. Until it is set, IP-keyed
    rate limits bucket every caller together. See [known-limitations.md](known-limitations.md).
 
-4. **Deploy.** Watch the build log for `prisma migrate deploy` applying `0_init`, then
+4. **Deploy.** Watch the build log for pending Prisma migrations, then
    `server_listening`.
 
-5. **Seed once, by hand.** The seed never runs on startup. Running it twice changes nothing.
+5. **Seed once, by hand.** The seed never runs on startup. A rerun preserves funding and the admin password, but resets demo customer passwords.
 
    ```sh
    npm run seed
@@ -85,14 +85,26 @@ rather than accepting requests it cannot serve.
 `npm run migrate` is `prisma migrate deploy`. It runs in the build command because the free
 plan has no separate pre-deploy phase.
 
-It applies pending migrations and nothing else. It never generates, never resets and never
-touches data. A failed migration fails the build, so a broken schema change does not reach a
-running service.
+It applies pending SQL, which may change schema or data. Review it and back up the database
+before release. A failed migration fails the build. The financial-history migration adds
+triggers that refuse updates and deletes on transfers and ledger entries.
 
 ## The pooled endpoint
 
-Neon's pooled endpoint is PgBouncer. It rejects startup parameters and shares session state
-between clients.
+Schema-scoped tests need a direct connection that accepts `search_path` startup options.
 
 The application uses the pooled endpoint and sets no startup parameters. The integration tests
 use the direct endpoint, because they set `search_path`. See `server/tests/database.ts`.
+
+## Database roles
+
+Use a migration role for schema changes and a separate application role for requests.
+The application role must not own tables, disable triggers or truncate financial tables.
+Do not grant it update or delete privileges on transfers and ledger entries. Keep the
+insert, read and balance-update permissions the service needs.
+
+## Frontend
+
+Build `frontend/` with the deployed API URL in `VITE_API_BASE_URL` and publish `dist/`.
+Configure an `index.html` fallback for application routes and add the frontend origin
+to backend CORS. See [the frontend guide](frontend.md).

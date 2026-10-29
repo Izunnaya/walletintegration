@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { testDatabaseUrl } from "./testDatabaseUrl.ts";
 import { randomUUID } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import { pool } from "./database.ts";
@@ -6,11 +7,7 @@ import { createDatabaseClient } from "../src/models/databaseClient.ts";
 
 // Only this generated schema is created, modified and removed by the HTTP tests.
 export const authSchema = `wallet_auth_test_${randomUUID().replaceAll("-", "")}`;
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) throw new Error("DATABASE_URL is required for auth integration tests.");
-const url = new URL(connectionString);
-url.hostname = url.hostname.replace("-pooler", "");
-url.searchParams.set("schema", authSchema);
+const url = testDatabaseUrl(process.env.TEST_DATABASE_URL, authSchema);
 export const authPrisma = createDatabaseClient(url.toString(), {
   // Generous, because the tests reach a hosted database across a VPN and Prisma's default
   // two second maxWait is shorter than a single round trip under load.
@@ -25,9 +22,6 @@ export async function prepareAuthDatabase() {
 
   const client = await pool.connect();
   try {
-    // One transaction, so a migration that fails part way leaves no schema at all rather
-    // than a half-built one the next run would trip over. SET LOCAL scopes the search_path
-    // to this transaction, so nothing has to reset it afterwards.
     await client.query("BEGIN");
     await client.query(`CREATE SCHEMA "${authSchema}"`);
     await client.query(`SET LOCAL search_path TO "${authSchema}"`);

@@ -4,16 +4,6 @@ import type { Server } from "node:http";
 import { apiPrisma, prepareApiDatabase, closeApiDatabase } from "./apiDatabase.ts";
 import { hashPassword } from "../src/models/password.ts";
 
-// The parts of the HTTP hardening the existing suite states but does not pin down.
-//
-// admin.integration.test.ts proves the admin quota refuses with a Retry-After, and
-// security.integration.test.ts proves no-store and the body limit on one route each. What is
-// left is the ordering and the isolation: that the quota is spent before the authorisation
-// query rather than after it, that one account's quota is its own, that no-store is on the
-// responses that actually carry money, that the body limit guards the money route too, and
-// that a refusal for someone else's record is the same bytes as a refusal for a record that
-// never existed.
-
 vi.mock("../src/models/db.ts", async () => {
   const { apiPrisma, apiSchema } = await import("./apiDatabase.ts");
   return { prisma: apiPrisma, databaseSchema: apiSchema };
@@ -107,11 +97,6 @@ function get(path: string, token?: string, extra: Record<string, string> = {}) {
 
 describe("the admin quota is spent before the authorisation query", () => {
   it("refuses a customer flooding /admin at the quota, not at the role check", async () => {
-    // The router is verifyToken, adminLimiter, requireRole: the quota is counted on an
-    // authenticated caller before the database is asked what their role is. So a customer
-    // hammering an admin route gets exactly thirty 403s and is then refused by the limiter,
-    // which is what stops a non-admin spending a database round trip per request. If the
-    // limiter sat after the role check, every one of these would be a 403 and a query.
     const flooder = await createActor("flooder@hardening.invalid", "customer");
     const statuses: number[] = [];
     let limited: Response | undefined;
@@ -162,9 +147,6 @@ describe("requireRole reads the current role and block state, not the token's", 
     await apiPrisma.user.update({ where: { id: actor.id }, data: { role: "customer" } });
     expect((await get("/admin/audit", actor.token)).status).toBe(403);
 
-    // The same bytes of token work again the moment the row says admin. Nothing is cached,
-    // which is the property that makes a demotion take effect without a token revocation
-    // list - and also the property that makes every privileged request cost a query.
     await apiPrisma.user.update({ where: { id: actor.id }, data: { role: "admin" } });
     expect((await get("/admin/audit", actor.token)).status).toBe(200);
 
@@ -214,10 +196,6 @@ describe("no response that carries money may be stored", () => {
 
 describe("the 16 KB body limit guards the money route too", () => {
   it("refuses an oversized transfer before a key is claimed", async () => {
-    // security.integration.test.ts proves the limit on /auth/login, which claims nothing. On
-    // /transfers the parser runs before validateIdempotencyKey, so an oversized body must be
-    // refused without the key being claimed - otherwise a caller could burn their own keys
-    // with bodies the service never read.
     const key = "oversized-body-key";
     const response = await fetch(`${baseUrl}/transfers`, {
       method: "POST",

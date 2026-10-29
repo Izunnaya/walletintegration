@@ -14,10 +14,6 @@ vi.hoisted(() => {
 });
 import app from "../src/app.ts";
 
-// These test the two things that break a browser client while curl keeps working, because
-// curl sends no preflight and ignores the response-header safelist. Neither failure is
-// visible from the terminal, which is why they are pinned here.
-
 let server: Server | undefined;
 let baseUrl: string;
 
@@ -59,9 +55,6 @@ describe("preflight", () => {
     expect(response.status).toBeLessThan(300);
 
     const headers = response.headers.get("access-control-allow-headers") ?? "";
-    // The browser refuses the real request unless the server names every custom header it
-    // intends to send. Idempotency-Key is custom, so omitting it fails every transfer from
-    // the UI while curl succeeds.
     expect(headers.toLowerCase()).toContain("idempotency-key");
     expect(headers.toLowerCase()).toContain("authorization");
   });
@@ -92,9 +85,6 @@ describe("response headers a client has to read", () => {
     const response = await fetch(`${baseUrl}/health/live`, { headers: { Origin: allowed } });
 
     const exposed = (response.headers.get("access-control-expose-headers") ?? "").toLowerCase();
-    // A browser hides every response header outside a short safelist from JavaScript, so
-    // response.headers.get("X-Request-Id") returns null unless the server permits it. That
-    // id is what a user quotes when a transfer fails.
     expect(exposed).toContain("x-request-id");
   });
 
@@ -150,10 +140,6 @@ describe("the allowlist", () => {
 
 describe("transient failures", () => {
   it("answers 503 with Retry-After, not 500, when the database is briefly unavailable", async () => {
-    // A connection pool timeout, an unreachable database or a dropped socket means the
-    // request did not succeed while nothing is broken. 500 would tell the client not to
-    // retry something that would probably work, and would file a capacity problem as a
-    // defect. This surfaced for real: concurrent logins on Render returned 500.
     const poolTimeout = Object.assign(new Error("Timed out fetching a new connection"), {
       code: "P2024",
     });

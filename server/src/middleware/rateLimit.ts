@@ -27,20 +27,7 @@ const shared = {
   handler: refusal,
 };
 
-// Deliberately generous. A reviewer testing concurrency fires dozens of simultaneous
-// transfers at one wallet, and a limit tight enough to look serious would answer 429 and
-// read as a broken demo.
-//
-// The two unusual settings exist because this quota sits in front of a retry contract that
-// the service itself instructs. A 503 tells the caller "retry with the same
-// Idempotency-Key", so under contention one authorised transfer can cost several requests.
-// Counting those retries against the quota meant a client doing exactly what it was told
-// could be cut off mid-recovery, with the outcome still unconfirmed - measured at twelve
-// concurrent sends from one account.
-//
-// So a 503 does not consume quota: the request did not succeed and retrying it is the
-// documented behaviour, not abuse. Everything else still counts, including the business
-// rejections, so this is not a way to send unlimited requests.
+// 503 retries keep the same transfer key and do not consume this quota.
 export const transferLimiter = rateLimit({
   ...shared,
   windowMs: 60_000,
@@ -71,10 +58,6 @@ export const readLimiter = rateLimit({
   keyGenerator: callerKey,
 });
 
-
-// The email is hashed so the limiter's key space does not become a list of which addresses
-// have accounts here. validateLoginRequest has already trimmed and lowercased it, so case
-// and whitespace variants share a bucket.
 function accountKey(res: Response): string {
   const email: unknown = res.locals.body?.email;
   if (typeof email !== "string") throw new Error("Validate login before applying the account limit");
@@ -85,15 +68,7 @@ function clientIp(req: Request): string {
   return ipKeyGenerator(req.ip ?? req.socket.remoteAddress ?? "unknown");
 }
 
-// Two limits on one account, because a single one cannot do both jobs.
-//
-// A tight per-account limit stops password guessing, and also hands anyone who knows your
-// email address a way to lock you out of your own account: ten wrong passwords a minute and
-// the real owner is refused for the rest of the window. That is worth more to an attacker
-// than the guessing it prevents, and it is cheap.
-//
-// So the tight limit is per account AND per client. Guessing from one place is capped at ten
-// a minute; locking somebody out would mean sending from their own address.
+// Limit attempts per account and client; use a separate account-wide ceiling.
 export const loginAccountLimiter = rateLimit({
   ...shared,
   windowMs: 60_000,
@@ -101,11 +76,7 @@ export const loginAccountLimiter = rateLimit({
   keyGenerator: (req: Request, res: Response) => `${accountKey(res)}:${clientIp(req)}`,
 });
 
-// The ceiling the per-client limit cannot provide: distributed guessing against one account
-// from many addresses. Every attempt costs a bcrypt hash at cost 12, so this caps the work
-// one account can be made to do regardless of where the requests come from. Set far above
-// any human - a person who has mistyped their password sixty times in a minute is not a
-// person - so it is a cost ceiling rather than something an attacker can use for a lockout.
+// Cap distributed login attempts against one account.
 export const loginAccountCeiling = rateLimit({
   ...shared,
   windowMs: 60_000,

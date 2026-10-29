@@ -1,24 +1,13 @@
 import "dotenv/config";
+import { testDatabaseUrl } from "./testDatabaseUrl.ts";
 import { randomUUID } from "node:crypto";
 import { readFile, readdir } from "node:fs/promises";
 import { Pool } from "pg";
 import { createDatabaseClient } from "../src/models/databaseClient.ts";
 
-// A schema of its own for the history, admin and rate-limit tests, created from the real
-// migration and dropped afterwards. They write committed rows — a blocked user, an audit
-// entry — so they cannot share a schema with anything else, and rolling back is not an
-// option when the point is to prove a commit happened.
-
 export const apiSchema = `wallet_api_test_${randomUUID().replaceAll("-", "")}`;
 
-const connectionString = process.env.DATABASE_URL;
-if (!connectionString) throw new Error("DATABASE_URL is required for the API integration tests.");
-
-// The direct endpoint, not the pooled one. Scoping a connection to a schema needs the
-// search_path startup parameter, and PgBouncer refuses startup parameters.
-const url = new URL(connectionString);
-url.hostname = url.hostname.replace("-pooler", "");
-url.searchParams.set("schema", apiSchema);
+const url = testDatabaseUrl(process.env.TEST_DATABASE_URL, apiSchema);
 
 export const apiPrisma = createDatabaseClient(url.toString(), {
   // Generous: the database is hosted and Prisma's two second default maxWait is shorter than
@@ -73,9 +62,6 @@ export async function closeApiDatabase() {
   }
 }
 
-// Money is moved the way the service moves it: a transfer row, two signed ledger entries and
-// both balances. Writing a balance directly would leave the fixtures failing the very
-// reconciliation the tests rely on.
 export async function fundWallet(walletId: bigint, fromWalletId: bigint, amountMinor: bigint, reference: string) {
   await apiPrisma.$transaction(async (client) => {
     const transfer = await client.transfer.create({
