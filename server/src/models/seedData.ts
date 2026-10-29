@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { Prisma } from "../generated/prisma/client.ts";
 import { hashPassword } from "./password.ts";
+import { registerRequestSchema } from "../domain/authRequest.ts";
 
 // The demo customers' password is published in the README, so it is reset on every run.
 // Keeping it in step with the documentation is the whole point of a fixture account, and
@@ -29,8 +30,8 @@ function adminPassword(): string {
     return DEFAULT_LOCAL_ADMIN_PASSWORD;
   }
 
-  if (configured.length === 0 || Buffer.byteLength(configured, "utf8") > 72) {
-    throw new Error("SEED_ADMIN_PASSWORD must be non-empty and at most 72 UTF-8 bytes.");
+  if (!registerRequestSchema.shape.password.safeParse(configured).success) {
+    throw new Error("SEED_ADMIN_PASSWORD must meet the registration password requirements.");
   }
   return configured;
 }
@@ -167,13 +168,14 @@ export async function reportState(client: Prisma.TransactionClient, schema: stri
 
 // The caller owns the transaction; all writes use its Prisma transaction client.
 export async function applySeed(client: Prisma.TransactionClient) {
+  const configuredAdminPassword = adminPassword();
   const systemWallet = await ensureSystemWallet(client);
   const admin = await ensureUser(
     client,
     ADMIN_EMAIL,
     "Wallet Admin",
     "admin",
-    await hashPassword(adminPassword()),
+    await hashPassword(configuredAdminPassword),
   );
   await ensureWallet(client, admin.id);
 
