@@ -46,7 +46,12 @@ async function reconcileWithDamage(damage?: Damage) {
   await apiPrisma
     .$transaction(
       async (client) => {
-        if (damage) await damage(client);
+        if (damage) {
+          // Only these fault-injection tests bypass history protection; rollback restores it.
+          await client.$executeRaw`ALTER TABLE ${namespace}.transfers DISABLE TRIGGER transfers_immutable`;
+          await client.$executeRaw`ALTER TABLE ${namespace}.ledger_entries DISABLE TRIGGER ledger_entries_immutable`;
+          await damage(client);
+        }
         checks = await runReconciliation(client, apiSchema);
         throw rollback;
       },

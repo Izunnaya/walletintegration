@@ -45,7 +45,12 @@ async function reconcileWithDamage(damage?: Damage) {
   await apiPrisma
     .$transaction(
       async (client) => {
-        if (damage) await damage(client);
+        if (damage) {
+          // Only these fault-injection tests bypass history protection; rollback restores it.
+          await client.$executeRaw`ALTER TABLE ${namespace}.transfers DISABLE TRIGGER transfers_immutable`;
+          await client.$executeRaw`ALTER TABLE ${namespace}.ledger_entries DISABLE TRIGGER ledger_entries_immutable`;
+          await damage(client);
+        }
         checks = await runReconciliation(client, apiSchema);
         throw rollback;
       },
@@ -114,7 +119,7 @@ describe("the checks still find the damage they exist for", () => {
   });
 });
 
-describe("damage the reconciliation does not see", () => {
+describe("damage reconciliation cannot see after a database owner bypasses history protection", () => {
   it("does not see a committed transfer rewritten to a different amount", async () => {
     // CONTRIBUTING says financial rows are never updated or deleted, and a correction is a
     // new compensating entry. Nothing in the database enforces that: there is no trigger, no
