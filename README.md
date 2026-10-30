@@ -37,9 +37,10 @@ npm run dev
 ```
 
 Open http://localhost:3001. The API uses http://localhost:3000 by default.
-Live frontend: [walletintegration.vercel.app](https://walletintegration.vercel.app/)
 
-Live API: [walletintegration-6t6r.onrender.com](https://walletintegration-6t6r.onrender.com/)
+**Live frontend**: [walletintegration.vercel.app](https://walletintegration.vercel.app/)
+
+**Live API**: [walletintegration-6t6r.onrender.com](https://walletintegration-6t6r.onrender.com/)
 
 ## What it does
 
