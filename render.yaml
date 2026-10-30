@@ -6,7 +6,7 @@ services:
     runtime: node
     plan: free
     # The API is one package inside the repository, so Render builds from server/ and the
-    # frontend is ignored entirely.
+    # frontend has its own static service below.
     rootDir: server
     # npm ci installs exactly the lockfile. postinstall runs prisma generate, so the client
     # exists before tsc compiles against it. migrate deploy applies any pending migration
@@ -39,3 +39,21 @@ services:
       # request; debug is for a live investigation and should be put back afterwards.
       - key: LOG_LEVEL
         value: info
+
+  # Vite output is served as files; application routes fall back to index.html.
+  - type: web
+    name: wallet-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    buildFilter:
+      paths:
+        - frontend/**
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://walletintegration-6t6r.onrender.com
