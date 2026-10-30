@@ -1,7 +1,14 @@
 # Wallet frontend
 
-React and Vite screens for the wallet API. The structure follows the Restaurant
-project: screens, workflow forms and resource API hooks.
+I built the wallet UI with React and Vite, following the structure from my
+Restaurant project: screens, workflow forms and resource API hooks. The screens
+match the API's account, wallet, transfer and admin operations.
+
+I keep server data in TanStack Query, fields in React Hook Form and calculations
+in pure helpers. Transfers have an explicit recovery workflow because losing a
+response does not establish that the payment failed.
+
+Live app: [walletintegration.vercel.app](https://walletintegration.vercel.app/).
 
 ## Start
 
@@ -13,6 +20,18 @@ npm run dev
 
 Open http://localhost:3001. The default API is http://localhost:3000. Restart Vite
 after changing the URL and allow the frontend origin in backend CORS.
+
+## Deploy
+
+I deploy the frontend on Vercel. Select `frontend` as the root directory, use the
+Vite framework preset, `npm run build` as the build command and `dist` as output.
+Set `VITE_API_BASE_URL=https://walletintegration-6t6r.onrender.com` in Vercel before
+building. It is public configuration and is included in the browser bundle.
+
+The deployed frontend origin is `https://walletintegration.vercel.app`. Add it to
+the Render API's `CORS_ORIGINS`. `vercel.json` supplies the application-route fallback
+so direct visits and refreshes load the app.
+The [deployment guide](../docs/deployment.md) covers route refreshes and verification.
 
 ## Check
 
@@ -30,3 +49,6 @@ to the deployed service.
 Read the [frontend guide](../docs/frontend.md) for the folder structure, screens,
 API integration, sessions, transfer recovery, loading states and deployment.
 The [API contract](../docs/api.md) explains the backend endpoints.
+
+My [frontend decisions](../docs/frontend-decisions.md) cover the reasons and
+tradeoffs behind this structure, sessions, validation and payment recovery.

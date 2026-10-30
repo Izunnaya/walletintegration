@@ -1,11 +1,13 @@
-# Limits and deployment checks
+# Current limits
+
+I keep these boundaries explicit so the guarantees in the decision guides are not
+read as promises the current implementation cannot make.
 
 ## Proxy configuration
 
 `TRUST_PROXY_HOPS` must match the observed ingress chain. Its default, `0`, ignores
 forwarded headers. Behind a proxy, that can put many people in one IP rate-limit
-bucket, including login requests. Check ingress logs before changing it. This audit
-did not verify the deployed value.
+bucket, including login requests. I need to verify the deployed ingress chain from logs before changing it.
 
 ## Scaling and load
 
@@ -13,10 +15,11 @@ Rate-limit counters live in one process and reset on restart. Use a shared store
 before adding replicas. Account ceilings can also be exhausted by a distributed
 attacker; they are not a complete abuse-prevention system.
 
-The audit exercised simultaneous transfers, duplicate keys, opposite directions,
-restrictions, failures and retries on local PostgreSQL. It did not establish production
-capacity, sustained throughput or p99 latency. Test those on a staging deployment
-with the intended instance size, database region and connection limits.
+My concurrency tests exercise simultaneous transfers, duplicate keys, opposite
+directions, restrictions, failures and retries. Passing those checks establishes
+the tested accounting behavior; it does not establish sustained throughput or p99
+latency. I still need staging measurements with the intended instance size,
+database region and connection limits.
 
 History uses bounded cursor pagination. Larger datasets still need query-plan and
 index measurements; a small test database does not prove performance at scale.
@@ -26,7 +29,7 @@ index measurements; a small test database does not prove performance at scale.
 Triggers reject updates and deletes on financial history. They do not prevent a
 database owner from disabling them, truncating tables or changing the schema.
 Use a separate migration role and a restricted application role. Keep backups.
-This audit added the triggers but did not change hosted database permissions.
+The migration adds triggers; hosted role permissions remain a deployment responsibility.
 
 Reconciliation checks consistency, not independent evidence of the original history.
 Two transfers under different keys may both balance correctly. Only replaying the
@@ -55,14 +58,14 @@ removing them would allow an old key to execute again.
 
 ## Dependency checks
 
-The audit found no reported runtime dependency vulnerabilities. The frontend's
+The frontend's
 shadcn development CLI has a low-severity deepmerge advisory, also reported through
-its registry dependency. It is not shipped in the browser bundle. The offered npm
-fix downgrades the CLI across major versions, so it was left for a compatible update.
+its registry dependency. It is not shipped in the browser bundle. I have kept the CLI version rather than applying a major downgrade as an automated
+fix; it needs a compatible dependency update.
 
 ## Test boundaries
 
 Fault injection proves rollback and safe retries for the tested cases. It does not
 cover every process crash or network failure during commit. Browser tests intercept
-API requests; they do not verify the deployed backend. The hosted database was
-unreachable during this audit, so database checks ran on local PostgreSQL 18.
+API requests; they do not verify the deployed backend. Local PostgreSQL tests do not substitute for verifying the deployed API and its
+configuration.

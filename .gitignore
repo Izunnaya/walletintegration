@@ -19,3 +19,6 @@ coverage/
 /DECISIONS.md
 /WALKTHROUGH.md
 /OPEN-QUESTIONS.md
+
+# Local verification report.
+/docs/audit.md

@@ -1,9 +1,9 @@
 # Working on this project
 
-Use one branch per feature or fix, based on `main`. Keep commits small enough to
-review on their own. Use the configured Git name and email; do not add an AI author.
+I use one branch per feature or fix, based on `main`, and keep commits small enough
+to review on their own. Commits use the configured project author name and email.
 
-Commit messages should say what changed in plain language. Use a short prefix such
+I write commit messages that say what changed in plain language. Use a short prefix such
 as `fix:`, `feat:`, `test:` or `docs:`. Add a body only when the reason is not clear.
 For money changes, explain what commits together and what happens if the work fails.
 
@@ -54,4 +54,5 @@ Install a Playwright browser first, or use installed Edge with
 then the relevant full suite before pushing.
 
 Read [the backend structure](docs/architecture.md), [the frontend guide](docs/frontend.md)
-and [the design decisions](docs/decisions.md) before changing shared behavior.
+and the separate [server](docs/server-decisions.md) and
+[frontend decisions](docs/frontend-decisions.md) before changing shared behavior.

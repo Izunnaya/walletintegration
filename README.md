@@ -1,8 +1,13 @@
 # Wallet Service
 
-An NGN wallet application with account creation, transfers and admin account
-restrictions. The backend uses Express, Prisma and PostgreSQL. The frontend uses
-React and Vite.
+I built this NGN wallet application to support account creation, transfers and
+admin account restrictions. The backend uses Express, Prisma and PostgreSQL; the
+frontend uses React and Vite.
+
+The main requirement is that a payment stays correct when requests arrive together
+or a client retries after losing the response. I keep the financial work in one
+database transaction and preserve the payment key across retries. The decision
+guides explain how those guarantees fit the implementation.
 
 ## Start locally
 
@@ -32,7 +37,9 @@ npm run dev
 ```
 
 Open http://localhost:3001. The API uses http://localhost:3000 by default.
-The deployed API is https://walletintegration-6t6r.onrender.com.
+Live frontend: [walletintegration.vercel.app](https://walletintegration.vercel.app/)
+
+Live API: [walletintegration-6t6r.onrender.com](https://walletintegration-6t6r.onrender.com/)
 
 ## What it does
 
@@ -55,7 +62,7 @@ Public wallet IDs start with `wlt_`; older numeric IDs remain supported.
 
 ## Transfer rules
 
-A transfer locks users and wallets before checking balances and restrictions.
+I lock users and wallets before checking balances and restrictions.
 The transfer, debit, credit, balance updates and saved response commit together.
 Customer balances cannot go negative. Only the wallet owner can send its funds.
 
@@ -100,6 +107,15 @@ prepared test schema in `TEST_DATABASE_URL`.
 From `frontend/`, run `npm run build` and `npm test`. Install a Playwright browser or
 use installed Edge. Browser tests use intercepted API responses.
 
+## Deployment
+
+The API runs on Render from `server/`, with its configuration in
+[`render.yaml`](render.yaml). I deploy the Vite frontend separately on Vercel from
+`frontend/`. The frontend needs the public API URL at build time and its deployed
+origin in the API's CORS allowlist. [The deployment guide](docs/deployment.md)
+covers the settings and route handling. The frontend is available at
+[walletintegration.vercel.app](https://walletintegration.vercel.app/).
+
 ## Read next
 
 | Document | Covers |
@@ -108,8 +124,8 @@ use installed Edge. Browser tests use intercepted API responses.
 | [Money and account rules](docs/domain.md) | Transfers, restrictions and recovery |
 | [API contract](docs/api.md) | Endpoints, response shapes and errors |
 | [Frontend guide](docs/frontend.md) | Screens, forms, API hooks, sessions and loading |
-| [Design decisions](docs/decisions.md) | Why the code works this way |
-| [Audit findings](docs/audit.md) | Fixes, checks and remaining work |
+| [Server decisions](docs/server-decisions.md) | Why I chose the money, locking, security and database rules |
+| [Frontend decisions](docs/frontend-decisions.md) | Why I chose the screen structure, API hooks and recovery workflow |
 | [Known limits](docs/known-limitations.md) | Security and scaling boundaries |
 | [Prisma workflow](docs/prisma.md) | Migrations, seeding and test isolation |
 | [Deployment](docs/deployment.md) | Hosting configuration and release checks |
