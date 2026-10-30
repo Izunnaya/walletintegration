@@ -1,6 +1,13 @@
 # Wallet API
 
-Express and TypeScript over PostgreSQL, with Prisma for database access.
+I use Express and TypeScript for the API, PostgreSQL for storage and transactions,
+and Prisma for ordinary database access. The server creates users with wallets,
+executes transfers and records admin account restrictions.
+
+A transfer locks the accounts and wallets before checking funds. Its history,
+ledger entries, balances and saved retry response commit together. I keep those
+steps visible in the transfer service so the financial rule can be followed from
+start to finish.
 See the [project setup](../README.md) and [backend structure](../docs/architecture.md).
 
 ## Commands
@@ -35,3 +42,7 @@ See the [project setup](../README.md) and [backend structure](../docs/architectu
 Keep secrets in the ignored `.env` or hosting environment. Use a disposable
 development database for tests. Read [the Prisma workflow](../docs/prisma.md)
 before migrating existing data.
+
+The [server decisions](../docs/server-decisions.md) explain why I use this money
+format, lock order, idempotency contract and history protection. The
+[account and money guide](../docs/domain.md) walks through the operations.

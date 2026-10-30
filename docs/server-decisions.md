@@ -318,7 +318,7 @@ Code: `server/src/middleware/rateLimit.ts`, `server/src/proxyConfig.ts`.
 amounts, wallet and currency assignments, negative customer balances, the system
 total, and transfer IDs and amounts in saved successful responses.
 
-All seven checks run in one read-only `REPEATABLE READ` transaction. Without a shared
+All seven read checks share one `REPEATABLE READ` transaction. Without a shared
 snapshot, a transfer committing between checks could make correct queries appear
 to disagree.
 

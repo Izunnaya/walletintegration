@@ -1,8 +1,9 @@
 # Frontend guide
 
-The frontend lets a customer create an account, view their wallet and send money.
+I built the frontend around account creation, viewing a wallet and sending money.
 Admins can block or unblock accounts and read the action log. Every screen uses an
-existing backend endpoint.
+existing backend endpoint. The separate [frontend decisions](frontend-decisions.md)
+explain why I chose this structure, session handling and recovery behavior.
 
 ## Run it
 
@@ -29,9 +30,9 @@ must never contain a secret. The backend must allow the frontend origin in CORS.
 | `src/lib/` | Money, validation, motion and notification helpers |
 | `src/hooks/` | Small hooks used by more than one workflow |
 
-Keep a feature near its screen or form. Move a component to the shared folder when
+I keep a feature near its screen or form. Move a component to the shared folder when
 another screen needs it. Pages use API hooks; they do not call `fetch` directly.
-Pure functions handle calculations and validation. Hooks handle browser storage,
+I use pure functions for calculations and validation. Hooks handle browser storage,
 timers, requests and state.
 
 ## Screens and endpoints
@@ -67,7 +68,7 @@ with a path, a Zod response schema and any token, body or idempotency key.
 query cancellation with a 65-second timeout. Errors become `ApiError` objects with
 a code, message, optional field errors and retry delay.
 
-TanStack Query owns server data. Query keys include the user ID. Signing in or out
+I use TanStack Query to own server data. Query keys include the user ID. Signing in or out
 cancels reads and clears cached data, so one account does not see another's wallet.
 A completed transfer refreshes wallet and history queries. A restriction change
 refreshes the admin log.
@@ -144,6 +145,10 @@ alerts or toasts. Use clear messages and keep a way to retry safe reads. A delay
 request is not proof that it failed.
 
 ## Adding a screen
+
+I extend an existing workflow before introducing a new shared abstraction. A new
+screen still needs a clear contract and loading, empty, failure and success states.
+
 
 Start with the backend contract in [api.md](api.md). Add its response schema to
 `src/api/contracts.ts` and its hook to the relevant API file. Build the screen in

@@ -1,110 +1,133 @@
 # Deployment
 
-The API is configured for Render and PostgreSQL on Neon. Check the current hosting
-plan before relying on deployment or scaling features.
+I keep two Render services in [`render.yaml`](../render.yaml): the Node API in
+`server/` and the static browser app in `frontend/`. PostgreSQL runs on Neon.
+They share a repository, but each builds from its own package directory.
 
-## Setup
+The API needs a running process and database credentials. Vite produces files for
+the browser, so the frontend service only needs its build output and public API URL.
+The reasons behind that split are in the [server](server-decisions.md#20-i-separate-startup-health-and-deployment-configuration)
+and [frontend](frontend-decisions.md#13-i-deploy-the-frontend-as-static-files) decisions.
 
-1. **New > Web Service.** Connect the repository and pick the branch.
+## API settings
 
-2. Render reads [`render.yaml`](../render.yaml) and fills in the rest. Confirm it matches:
+Create or connect the API service in Render, using the repository and deployment
+branch. When using a Blueprint, sync `render.yaml`; when setting up manually, use
+the same values:
 
-   | Setting | Value |
-   | --- | --- |
-   | Root directory | `server` |
-   | Build command | `npm ci --include=dev && npm run migrate && npm run build` |
-   | Start command | `npm start` |
-   | Health check path | `/health/ready` |
+| Setting | Value |
+| --- | --- |
+| Service | `wallet-service`, Node web service |
+| Root directory | `server` |
+| Build | `npm ci --include=dev && npm run migrate && npm run build` |
+| Start | `npm start` |
+| Health check | `/health/ready` |
 
-3. **Set the environment variables.** The secrets are marked `sync: false` in the blueprint, so
-   Render asks for them instead of reading them from the repository.
+I install development dependencies during the build because TypeScript and the
+Prisma CLI are build tools. Starting uses the compiled `dist/index.js`. Seeding is
+an explicit operation, separate from startup and deployment.
 
-   | Variable | Value |
-   | --- | --- |
-   | `DATABASE_URL` | Neon > your project > Connect. Use the pooled connection string |
-   | `JWT_SECRET` | Generate a fresh one. Do not reuse the local value |
-   | `SEED_ADMIN_PASSWORD` | Your choice. Share with reviewers privately |
-   | `CORS_ORIGINS` | Where the browser client is served from, comma-separated |
-   | `TRUST_PROXY_HOPS` | The number of proxies in front of the service. Defaults to `0` |
+Set these environment variables on the API:
 
-   Generate the secret:
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | Hosted PostgreSQL connection; the app can use the pooled endpoint |
+| `JWT_SECRET` | Random signing secret, at least 32 characters |
+| `SEED_ADMIN_PASSWORD` | Admin credential for initial seeding or deliberate password changes |
+| `CORS_ORIGINS` | Actual frontend origins, separated by commas |
+| `TRUST_PROXY_HOPS` | Proxy count verified from the deployed ingress logs |
+| `LOG_LEVEL` | Normally `info` |
 
-   ```sh
-   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
-   ```
+Secrets use `sync: false` in the blueprint, so their values stay in the hosting
+environment. `TRUST_PROXY_HOPS` starts at zero until the proxy chain is verified.
+This ignores forwarded headers, but behind a proxy it can group callers into the
+same IP bucket. It should not be changed by guessing.
 
-   `TRUST_PROXY_HOPS` needs the real hop count from the ingress logs. Until it is set, IP-keyed
-   rate limits bucket every caller together. See [known-limitations.md](known-limitations.md).
-
-4. **Deploy.** Watch the build log for pending Prisma migrations, then
-   `server_listening`.
-
-5. **Seed once, by hand.** The seed never runs on startup. A rerun preserves funding and the admin password, but resets demo customer passwords.
-
-   ```sh
-   npm run seed
-   ```
-
-6. **Set the admin password.** The seed writes it once and never resets it.
-
-   ```sh
-   SEED_ADMIN_PASSWORD='...' npm run admin:password
-   ```
-
-   The database is Neon rather than Render-internal, so both commands run from anywhere with
-   the connection string. The free plan has no shell.
-
-## Verifying the deploy
+A signing secret can be generated locally with:
 
 ```sh
-curl -i https://<service>.onrender.com/health/live     # 200 {"status":"ok"}
-curl -i https://<service>.onrender.com/health/ready    # 200 {"status":"ready"}
+node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
 
-`live` answers while the database is unreachable. `ready` does not. A `503` from `ready` means
-the process is fine and the database is not.
+## Frontend settings
 
-Then the full path:
+Create or connect the static site from the same repository and branch. The second
+blueprint service defines:
 
-```sh
-curl -sX POST https://<service>.onrender.com/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"ada@example.com","password":"demo-password-2026"}'
+| Setting | Value |
+| --- | --- |
+| Service | `wallet-frontend`, static site |
+| Root directory | `frontend` |
+| Build | `npm ci && npm run build` |
+| Publish directory | `./dist` |
+| Public build variable | `VITE_API_BASE_URL=https://walletintegration-6t6r.onrender.com` |
+| Application route rewrite | `/*` to `/index.html` |
+
+The publish directory is relative to `frontend` because that is the service root.
+The frontend filter includes `frontend/**`, measured from the repository root.
+Blueprint edits are still processed even when ordinary code changes do not match
+a filter. These path rules follow [Render's monorepo settings](https://render.com/docs/monorepo-support).
+
+I keep the API URL in the blueprint because it is public configuration. Vite inserts
+it into the browser bundle during the build. Changing the value therefore needs a
+new frontend build. Tokens, passwords and database URLs must never use a `VITE_` variable.
+
+The rewrite lets a direct visit to `/transfer` or `/transactions/:id` load the app.
+React Router can then choose the screen. Without it, navigation inside an already
+loaded app could work while refreshing the same URL returns a host-level 404.
+
+The service type and routing fields follow [Render's Blueprint reference](https://render.com/docs/blueprint-spec).
+
+## Connect the two services
+
+After Render assigns the frontend URL, add that exact origin to the API's
+`CORS_ORIGINS` and redeploy the API. For example:
+
+```text
+CORS_ORIGINS=https://wallet-frontend.onrender.com
 ```
 
-## Expected behavior that looks wrong
+Use the actual assigned hostname, without a trailing slash. Scheme and port are
+part of an origin. Add local development origins too only if that API should accept
+them, using commas between entries.
 
-The first request after a pause takes tens of seconds. Free web services sleep when idle.
+This step is easy to miss because the UI can load and the API can answer while
+the browser refuses to expose the response to the page. CORS controls that browser
+access; it does not replace authentication or wallet ownership checks.
 
-`index.ts` runs `SELECT 1` before it listens. The process pays for the connection handshake
-instead of the first user, and the service refuses to start if the database is unreachable
-rather than accepting requests it cannot serve.
+## Database migrations and demo data
 
-## Migrations
+`npm run migrate` applies pending committed SQL before the build starts the new
+application. SQL can change schema or data, so I review migrations and back up
+existing data before release. I do not reset the database to deploy a schema change.
 
-`npm run migrate` is `prisma migrate deploy`. It runs in the build command because the free
-plan has no separate pre-deploy phase.
+The financial-history migration adds triggers rejecting updates and deletes on
+transfers and ledger entries. Deployment should use a separate migration role;
+the application role must not own tables, disable triggers or truncate history.
+It only needs the permissions used by request handling.
 
-It applies pending SQL, which may change schema or data. Review it and back up the database
-before release. A failed migration fails the build. The financial-history migration adds
-triggers that refuse updates and deletes on transfers and ledger entries.
+For the demonstration database, run `npm run seed` explicitly once configuration
+is set. A rerun preserves funding and the existing admin password, but resets public
+demo customer passwords. To change the admin credential, set `SEED_ADMIN_PASSWORD`
+and run `npm run admin:password` from `server/`.
 
-## The pooled endpoint
+The [Prisma guide](prisma.md) covers fresh setup, existing-schema adoption and isolated
+verification. Demo accounts are for the project demonstration, not real funds.
 
-Schema-scoped tests need a direct connection that accepts `search_path` startup options.
+## Verify a deployment
 
-The application uses the pooled endpoint and sets no startup parameters. The integration tests
-use the direct endpoint, because they set `search_path`. See `server/tests/database.ts`.
+1. Check the build log for successful migrations and compilation, then the startup
+   log for `database_ready` and `server_listening`.
+2. Request `/health/live` and `/health/ready`. Liveness returns `{"status":"ok"}`;
+   readiness returns `{"status":"ready"}` when the database query works.
+3. Load the deployed frontend and sign in using a demo account. Confirm its wallet
+   and history load through the real API origin.
+4. Open `/transfer` and refresh it directly. Do the same for an accessible receipt.
+   These check the static rewrite as well as client navigation.
+5. Check the browser network panel for failed CORS requests or a localhost API URL
+   accidentally included in the production bundle.
 
-## Database roles
-
-Use a migration role for schema changes and a separate application role for requests.
-The application role must not own tables, disable triggers or truncate financial tables.
-Do not grant it update or delete privileges on transfers and ledger entries. Keep the
-insert, read and balance-update permissions the service needs.
-
-## Frontend
-
-Build `frontend/` with the deployed API URL in `VITE_API_BASE_URL` and publish `dist/`.
-Configure an `index.html` fallback for application routes and add the frontend origin
-to backend CORS. See [the frontend guide](frontend.md).
+The frontend and API have separate loading behavior. Static page files can arrive
+while the API is starting. `index.ts` warms its database connection before listening,
+but cannot remove a hosting-platform wake-up delay. The UI shows a slow-request
+notice and preserves an unresolved transfer rather than calling it failed.

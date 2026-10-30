@@ -1,7 +1,12 @@
 # Prisma workflow
 
-Prisma manages models, ordinary queries and migrations. PostgreSQL handles storage,
+I use Prisma for models, ordinary queries and migrations. PostgreSQL handles storage,
 constraints and locks. The seed and transfer rules are handwritten application code.
+
+I keep the seed and transfer orchestration in application code because Prisma
+cannot decide which business operations should commit together. A generated client
+provides database operations; the transaction callback defines this project's unit
+of work. The [server decisions](server-decisions.md) explain that boundary.
 
 ## Files
 
@@ -30,7 +35,9 @@ npm run seed
 Migrations and seeding are separate. A non-local seed requires `SEED_ADMIN_PASSWORD`
 that meets the registration password rules. The seed resets demo customer passwords
 but preserves an existing admin password. Funding uses stable references so reruns
-do not add money again. Reporting runs after commit; a report error cannot undo it.
+do not add money again. Reporting runs after commit; a report error cannot undo it. This keeps a failed
+console report from being described as failed funding. If the transaction outcome
+is uncertain, the stable references make rerunning the seed safe.
 
 ## Adopting the old migration history
 

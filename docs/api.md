@@ -1,11 +1,13 @@
 # The API contract
 
-Every endpoint, the success shape, the failure shape, and which status code means what.
+I keep one API contract for both the server and frontend: the endpoints, response
+shapes and status codes below. The [server decisions](server-decisions.md) explain
+the rules behind the contract.
 
 ## Request ids
 
 `X-Request-Id` is on every response. The server generates it. An inbound `X-Request-Id` is
-ignored. See [ADR 12](decisions.md).
+ignored. The reason is covered under errors and logs in [the server decisions](server-decisions.md#15-i-keep-errors-consistent-and-logs-private).
 
 Every error body repeats it as `error.requestId`. Quote that value in a report. It leads to the
 log line for that request.
@@ -38,7 +40,7 @@ fixed message and nothing else.
 | `401` | No credentials, or they are invalid |
 | `403` | Authenticated but not allowed |
 | `404` | No such route, or no such record the caller may see |
-| `409` | The same idempotency key with different transfer details |
+| `409` | Email already registered, or an idempotency key reused with different details |
 | `413` | The body is over 16 KB |
 | `422` | Well-formed, and a business rule refuses it |
 | `429` | Rate limited. Carries `Retry-After` |
@@ -46,8 +48,8 @@ fixed message and nothing else.
 | `503` | Transient failure, or an unconfirmed transfer outcome. Carries `Retry-After` |
 
 `400` means the request could never work: `amountMinor` is `"abc"`. `422` means the request is
-fine and the answer is no: the amount is valid, the wallet cannot afford it. A client retries a
-`422` after changing the world, not the request.
+fine and the answer is no: the amount is valid, the wallet cannot afford it. For a transfer rejected with
+`422`, a later payment attempt needs a new key; the old key keeps its saved result.
 
 `404` is returned for another user's record, not `403`. A transfer the caller is not party to is
 indistinguishable from one that does not exist. `403` would confirm the id is real.
@@ -216,7 +218,7 @@ Admin only. Requires a reason.
 The restriction change and its audit row commit together, so there is no restriction without a
 record of who made it and why. Both lock the affected user row in the same order a transfer
 does, so blocking and transferring serialize rather than interleave. See
-[ADR 3](decisions.md).
+[the lock-order decision](server-decisions.md#6-i-lock-users-first-then-wallets-in-id-order).
 
 Unblocking does not lift a blacklist. Blocking yourself is refused.
 
