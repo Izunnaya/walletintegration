@@ -9,6 +9,10 @@ static browser files. The [server](server-decisions.md#20-i-separate-startup-hea
 and [frontend](frontend-decisions.md#13-i-deploy-the-frontend-as-static-files) decision
 guides explain those responsibilities.
 
+Live frontend: [walletintegration.vercel.app](https://walletintegration.vercel.app/).
+
+Live API: [walletintegration-6t6r.onrender.com](https://walletintegration-6t6r.onrender.com/).
+
 ## API settings
 
 Create or connect the API service in Render, using the repository and deployment
@@ -66,21 +70,23 @@ The API URL must be set before the build because Vite includes it in the shipped
 JavaScript. Changing it requires another build. Tokens, passwords and database
 credentials must never be put in a `VITE_` variable.
 
-I run the production build locally before deploying. The deployed frontend link
-will be added to the project and documentation once the Vercel URL is available.
+I run the production build locally before deploying. The live frontend is
+[walletintegration.vercel.app](https://walletintegration.vercel.app/). A successful
+local build does not set Vercel's environment variables; the API URL must also be
+configured for the deployment environment and followed by a new build.
 
 React Router owns paths such as `/transfer` after loading. Direct visits and refreshes
 also need the host to return `index.html`. Vercel's [Vite guide](https://vercel.com/docs/frameworks/frontend/vite)
-covers SPA rewrites; configure that fallback when setting up the deployment. It is
-separate from whether `npm run build` succeeds.
+covers SPA rewrites. `frontend/vercel.json` supplies the fallback in this project.
+It is separate from whether `npm run build` succeeds.
 
 ## Connect the two services
 
-After Vercel assigns the frontend URL, add that exact origin to the API's
+Add the deployed frontend origin, `https://walletintegration.vercel.app`, to the API's
 `CORS_ORIGINS` and redeploy the API. For example:
 
 ```text
-CORS_ORIGINS=https://your-project.vercel.app
+CORS_ORIGINS=https://walletintegration.vercel.app
 ```
 
 Use the actual assigned hostname, without a trailing slash. Scheme and port are

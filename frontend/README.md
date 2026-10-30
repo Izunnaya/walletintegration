@@ -8,6 +8,8 @@ I keep server data in TanStack Query, fields in React Hook Form and calculations
 in pure helpers. Transfers have an explicit recovery workflow because losing a
 response does not establish that the payment failed.
 
+Live app: [walletintegration.vercel.app](https://walletintegration.vercel.app/).
+
 ## Start
 
 ```sh
@@ -26,8 +28,9 @@ Vite framework preset, `npm run build` as the build command and `dist` as output
 Set `VITE_API_BASE_URL=https://walletintegration-6t6r.onrender.com` in Vercel before
 building. It is public configuration and is included in the browser bundle.
 
-After deployment, the frontend's actual origin needs to be added to the Render
-API's `CORS_ORIGINS`. The deployed frontend link will be added here once available.
+The deployed frontend origin is `https://walletintegration.vercel.app`. Add it to
+the Render API's `CORS_ORIGINS`. `vercel.json` supplies the application-route fallback
+so direct visits and refreshes load the app.
 The [deployment guide](../docs/deployment.md) covers route refreshes and verification.
 
 ## Check

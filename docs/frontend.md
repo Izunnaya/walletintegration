@@ -5,6 +5,8 @@ Admins can block or unblock accounts and read the action log. Every screen uses 
 existing backend endpoint. The separate [frontend decisions](frontend-decisions.md)
 explain why I chose this structure, session handling and recovery behavior.
 
+Live app: [walletintegration.vercel.app](https://walletintegration.vercel.app/).
+
 ## Run it
 
 From `frontend/`, run `npm ci`, copy `.env.example` to `.env.local`, then run
@@ -181,7 +183,7 @@ with fixtures, covering screens, errors, sessions, retries and account isolation
 They do not prove database concurrency or production response times; backend tests
 cover the database rules.
 
-Deploy `dist/` after setting the production `VITE_API_BASE_URL` at build time. Configure
-the host to serve `index.html` for application routes so refreshing a receipt page
-works. Add the deployed frontend origin to backend CORS. Never put a token or password
+Deploy `dist/` after setting the production `VITE_API_BASE_URL` at build time. The
+Vercel route fallback is in `frontend/vercel.json`, so refreshing a receipt page
+loads `index.html`. Add the deployed frontend origin to backend CORS. Never put a token or password
 in a `VITE_` variable.

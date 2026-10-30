@@ -37,7 +37,9 @@ npm run dev
 ```
 
 Open http://localhost:3001. The API uses http://localhost:3000 by default.
-The deployed API is https://walletintegration-6t6r.onrender.com.
+Live frontend: [walletintegration.vercel.app](https://walletintegration.vercel.app/)
+
+Live API: [walletintegration-6t6r.onrender.com](https://walletintegration-6t6r.onrender.com/)
 
 ## What it does
 
@@ -111,7 +113,8 @@ The API runs on Render from `server/`, with its configuration in
 [`render.yaml`](render.yaml). I deploy the Vite frontend separately on Vercel from
 `frontend/`. The frontend needs the public API URL at build time and its deployed
 origin in the API's CORS allowlist. [The deployment guide](docs/deployment.md)
-covers the settings and route handling. The frontend link will be added after deployment.
+covers the settings and route handling. The frontend is available at
+[walletintegration.vercel.app](https://walletintegration.vercel.app/).
 
 ## Read next
 
