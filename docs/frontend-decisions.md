@@ -194,8 +194,8 @@ consistent across pages.
 ## 13. I deploy the frontend as static files
 
 Vite builds the frontend into `dist/`. The API is a running Node process with a
-database connection. I keep them as separate Render services in one blueprint
-because their runtimes have different needs.
+database connection on Render. I deploy the frontend separately on Vercel, using
+`frontend` as its project root and `dist` as the output directory.
 
 `VITE_API_BASE_URL` is public build configuration. It ships in the JavaScript, so
 changing it needs a rebuild and secrets must never go there. The API's CORS allowlist

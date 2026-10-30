@@ -1,13 +1,13 @@
 # Deployment
 
-I keep two Render services in [`render.yaml`](../render.yaml): the Node API in
-`server/` and the static browser app in `frontend/`. PostgreSQL runs on Neon.
-They share a repository, but each builds from its own package directory.
+I host the API on Render and deploy the Vite frontend separately on Vercel.
+PostgreSQL runs on Neon. The API configuration is in [`render.yaml`](../render.yaml);
+Vercel builds the frontend package from `frontend/`.
 
-The API needs a running process and database credentials. Vite produces files for
-the browser, so the frontend service only needs its build output and public API URL.
-The reasons behind that split are in the [server](server-decisions.md#20-i-separate-startup-health-and-deployment-configuration)
-and [frontend](frontend-decisions.md#13-i-deploy-the-frontend-as-static-files) decisions.
+The API needs a running process and database credentials. The frontend build produces
+static browser files. The [server](server-decisions.md#20-i-separate-startup-health-and-deployment-configuration)
+and [frontend](frontend-decisions.md#13-i-deploy-the-frontend-as-static-files) decision
+guides explain those responsibilities.
 
 ## API settings
 
@@ -49,42 +49,38 @@ A signing secret can be generated locally with:
 node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
 
-## Frontend settings
+## Frontend settings on Vercel
 
-Create or connect the static site from the same repository and branch. The second
-blueprint service defines:
+Import the repository in Vercel and select the branch containing the frontend.
+Use these settings:
 
 | Setting | Value |
 | --- | --- |
-| Service | `wallet-frontend`, static site |
+| Framework preset | Vite |
 | Root directory | `frontend` |
-| Build | `npm ci && npm run build` |
-| Publish directory | `./dist` |
-| Public build variable | `VITE_API_BASE_URL=https://walletintegration-6t6r.onrender.com` |
-| Application route rewrite | `/*` to `/index.html` |
+| Build command | `npm run build` |
+| Output directory | `dist` |
+| Environment variable | `VITE_API_BASE_URL=https://walletintegration-6t6r.onrender.com` |
 
-The publish directory is relative to `frontend` because that is the service root.
-The frontend filter includes `frontend/**`, measured from the repository root.
-Blueprint edits are still processed even when ordinary code changes do not match
-a filter. These path rules follow [Render's monorepo settings](https://render.com/docs/monorepo-support).
+The API URL must be set before the build because Vite includes it in the shipped
+JavaScript. Changing it requires another build. Tokens, passwords and database
+credentials must never be put in a `VITE_` variable.
 
-I keep the API URL in the blueprint because it is public configuration. Vite inserts
-it into the browser bundle during the build. Changing the value therefore needs a
-new frontend build. Tokens, passwords and database URLs must never use a `VITE_` variable.
+I run the production build locally before deploying. The deployed frontend link
+will be added to the project and documentation once the Vercel URL is available.
 
-The rewrite lets a direct visit to `/transfer` or `/transactions/:id` load the app.
-React Router can then choose the screen. Without it, navigation inside an already
-loaded app could work while refreshing the same URL returns a host-level 404.
-
-The service type and routing fields follow [Render's Blueprint reference](https://render.com/docs/blueprint-spec).
+React Router owns paths such as `/transfer` after loading. Direct visits and refreshes
+also need the host to return `index.html`. Vercel's [Vite guide](https://vercel.com/docs/frameworks/frontend/vite)
+covers SPA rewrites; configure that fallback when setting up the deployment. It is
+separate from whether `npm run build` succeeds.
 
 ## Connect the two services
 
-After Render assigns the frontend URL, add that exact origin to the API's
+After Vercel assigns the frontend URL, add that exact origin to the API's
 `CORS_ORIGINS` and redeploy the API. For example:
 
 ```text
-CORS_ORIGINS=https://wallet-frontend.onrender.com
+CORS_ORIGINS=https://your-project.vercel.app
 ```
 
 Use the actual assigned hostname, without a trailing slash. Scheme and port are

@@ -357,9 +357,10 @@ Render checks readiness because an API that cannot reach its database cannot ser
 wallet requests. A platform cold start can still delay the first request before
 the application is running.
 
-The deployment uses Render for the API and static frontend, and Neon for PostgreSQL.
-The blueprint records builds and routing; credentials stay in environment variables.
-The static frontend and running API have different needs, covered in
+The API runs on Render, the frontend is deployed separately on Vercel, and PostgreSQL
+runs on Neon. The Render blueprint covers the API; frontend build settings live in
+Vercel. Credentials stay in environment variables. These different hosting needs are
+covered in
 [deployment.md](deployment.md).
 
 ## 21. I keep public wallet IDs separate from database keys

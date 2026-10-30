@@ -21,15 +21,14 @@ after changing the URL and allow the frontend origin in backend CORS.
 
 ## Deploy
 
-The frontend is a Render static site, built from this folder using
-`npm ci && npm run build` and published from `./dist`. The second service in
-[`render.yaml`](../render.yaml) records those settings.
+I deploy the frontend on Vercel. Select `frontend` as the root directory, use the
+Vite framework preset, `npm run build` as the build command and `dist` as output.
+Set `VITE_API_BASE_URL=https://walletintegration-6t6r.onrender.com` in Vercel before
+building. It is public configuration and is included in the browser bundle.
 
-`VITE_API_BASE_URL` is public build configuration, so changing it means rebuilding
-the files. The API must allow the deployed frontend origin through `CORS_ORIGINS`.
-The static rewrite serves `index.html` for application routes so refreshing
-`/transfer` or a receipt URL works. The [deployment guide](../docs/deployment.md)
-walks through these settings in order.
+After deployment, the frontend's actual origin needs to be added to the Render
+API's `CORS_ORIGINS`. The deployed frontend link will be added here once available.
+The [deployment guide](../docs/deployment.md) covers route refreshes and verification.
 
 ## Check
 

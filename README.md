@@ -107,11 +107,11 @@ use installed Edge. Browser tests use intercepted API responses.
 
 ## Deployment
 
-I deploy the API and browser app as separate Render services from one
-[`render.yaml`](render.yaml). The API runs from `server/`; Vite builds the frontend
-from `frontend/` into static files. A frontend deploy needs the public API URL at
-build time, an application-route rewrite and the frontend origin in the API's CORS
-allowlist. [The deployment guide](docs/deployment.md) covers the setup and checks.
+The API runs on Render from `server/`, with its configuration in
+[`render.yaml`](render.yaml). I deploy the Vite frontend separately on Vercel from
+`frontend/`. The frontend needs the public API URL at build time and its deployed
+origin in the API's CORS allowlist. [The deployment guide](docs/deployment.md)
+covers the settings and route handling. The frontend link will be added after deployment.
 
 ## Read next
 
