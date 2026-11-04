@@ -14,6 +14,14 @@ services:
     # so it belongs here.
     buildCommand: npm ci --include=dev && npm run migrate && npm run build
     startCommand: npm start
+    # The frontend lives in the same repository and deploys to Vercel, so without this every
+    # commit to frontend/ rebuilds the API: it recompiles, it runs migrate deploy against the
+    # production database, and on the free plan it restarts the instance - all for a change
+    # the API never sees. Paths are relative to the repository root, not to rootDir.
+    buildFilter:
+      paths:
+        - server/**
+        - render.yaml
     # Render restarts the service if this stops answering. It points at readiness, not
     # liveness, because a process that is up but cannot reach the database should not be
     # taking requests.

@@ -145,6 +145,18 @@ parameters and shares session state between clients. The application uses the po
 does not set any; the integration tests use the direct endpoint, because they do. See
 `server/tests/database.ts`.
 
+## Why the API does not rebuild on every commit
+
+`buildFilter` in the blueprint limits the API's builds to commits that touch `server/` or the
+blueprint itself. The frontend shares this repository and deploys to Vercel, so without the filter
+a change to `frontend/` rebuilds the API: it recompiles, it runs `prisma migrate deploy` against
+the production database, and on the free plan it restarts the instance - none of which the API
+asked for. Each of those rebuilds is also a chance to fail, which is how a frontend-only commit
+ends up showing a failed API deploy.
+
+A failed deploy on Render leaves the previous version serving, so the service staying healthy
+while the dashboard shows a failure is the expected behaviour rather than a contradiction.
+
 ## Migrations on deploy
 
 `npm run migrate` is `prisma migrate deploy`, and it runs in the build command because the free plan
