@@ -18,5 +18,8 @@ coverage/
 /WALKTHROUGH.md
 /OPEN-QUESTIONS.md
 
-# Local verification report.
+# Local verification reports and the tool that produces them. Not part of what the
+# service ships.
 /docs/audit.md
+/docs/production-audit-*.md
+/server/scripts/audit-production.mjs
