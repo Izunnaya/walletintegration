@@ -39,17 +39,19 @@ const TransferReceipt = ({
       {onBack && (
         <Button variant="ghost" size="sm" onClick={onBack}>
           <ArrowLeft />
-          {backLabel ?? "Back to transfers"}
+          {backLabel ?? "Back to workspace"}
         </Button>
       )}
-      <Check className="my-6 size-9 text-success" />
+      <div className="my-6 flex size-10 items-center justify-center rounded-full bg-success/10 text-success">
+        <Check className="size-5" />
+      </div>
       <h2 className="text-xl font-semibold">
         {success ? "Transfer completed" : "Transfer details"}
       </h2>
       <p className="my-5 break-all text-4xl tracking-tight">
         {money(transfer.amountMinor)}
       </p>
-      <dl className="space-y-4 text-sm">
+      <dl className="space-y-5 text-sm">
         {rows.map(([label, value]) => (
           <div
             key={label}

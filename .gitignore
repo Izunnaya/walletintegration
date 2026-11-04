@@ -11,14 +11,15 @@ coverage/
 
 /server/src/generated/
 
-# Internal tooling and its output. Not part of what the service ships.
-/server/scripts/audit-production.mjs
-/docs/production-audit-*.md
-
-# Working notes, kept out of the published repository.
+# Working notes kept out of the published repository: interview preparation,
+# the long-form decision log and the open-questions scratchpad. The published
+# equivalents are docs/decisions.md and docs/known-limitations.md.
 /DECISIONS.md
 /WALKTHROUGH.md
 /OPEN-QUESTIONS.md
 
-# Local verification report.
+# Local verification reports and the tool that produces them. Not part of what the
+# service ships.
 /docs/audit.md
+/docs/production-audit-*.md
+/server/scripts/audit-production.mjs

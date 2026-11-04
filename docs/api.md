@@ -69,6 +69,7 @@ key, which resolves it either way.
 | `POST /transfers` | User |
 | `GET /transfers` | User |
 | `GET /transfers/:id` | User |
+| `GET /admin/users` | Admin |
 | `POST /admin/users/:id/block` | Admin |
 | `POST /admin/users/:id/unblock` | Admin |
 | `GET /admin/audit` | Admin |
@@ -210,6 +211,20 @@ Never anyone else's.
 
 One transfer, if the caller sent or received it. `404` otherwise, including when the transfer
 exists.
+
+### GET /admin/users
+
+Admin only. The accounts an admin can act on, newest first, keyset paginated on the user id the
+way `GET /transfers` is. `search` matches name, email and wallet id, and runs in the database
+rather than over the returned page, so finding one account among many does not require paging to
+it.
+
+`isBlocked` and `isBlacklisted` are separate fields because they are different refusals: blocking
+is reversible through the endpoints below, blacklisting is keyed by email and is not lifted there.
+`passwordHash` is never selected. `wallet` is null for an account without an NGN wallet, which the
+schema allows even though registration always creates one.
+
+`limit` is 1 to 100. An unknown query parameter is refused `400`.
 
 ### POST /admin/users/:id/block and /unblock
 

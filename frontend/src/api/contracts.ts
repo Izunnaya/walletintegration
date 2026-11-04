@@ -44,6 +44,26 @@ export const restrictionSchema = z.object({
   changed: z.boolean(),
   note: z.string().optional(),
 });
+export const adminUserSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  email: z.string(),
+  role: z.enum(["customer", "admin"]),
+  isBlocked: z.boolean(),
+  isBlacklisted: z.boolean(),
+  createdAt: z.string().datetime(),
+  wallet: z
+    .object({
+      publicId: publicWalletIdSchema,
+      currency: z.literal("NGN"),
+      balanceMinor: z.string().regex(/^\d+$/),
+    })
+    .nullable(),
+});
+export const adminUserPageSchema = z.object({
+  users: z.array(adminUserSchema),
+  nextCursor: z.string().nullable(),
+});
 export const auditSchema = z.object({
   entries: z.array(
     z.object({
@@ -58,6 +78,8 @@ export const auditSchema = z.object({
 });
 
 export type User = z.infer<typeof userSchema>;
+export type AdminUser = z.infer<typeof adminUserSchema>;
+export type Registration = z.infer<typeof registrationSchema>;
 export type Session = z.infer<typeof sessionSchema>;
 export type Wallet = z.infer<typeof walletSchema>;
 export type Transfer = z.infer<typeof historyTransferSchema>;

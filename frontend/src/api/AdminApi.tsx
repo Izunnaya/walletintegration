@@ -1,9 +1,41 @@
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  keepPreviousData,
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { useAuth } from "@/auth/AuthProvider";
 import { apiRequest } from "./client";
-import { auditSchema, restrictionSchema } from "./contracts";
+import { adminUserPageSchema, auditSchema, restrictionSchema } from "./contracts";
 
 const auditKey = ["admin", "audit"] as const;
+const usersKey = ["admin", "users"] as const;
+
+// The accounts an admin can act on. The search goes to the server rather than filtering the
+// page in the browser, so looking for one account among many finds it without paging to it.
+export const useUsers = (search: string) => {
+  const { session } = useAuth();
+  const query = useInfiniteQuery({
+    queryKey: [...usersKey, session?.user.id, search],
+    initialPageParam: null as string | null,
+    queryFn: ({ pageParam, signal }) =>
+      apiRequest(
+        `/admin/users?limit=20${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ""}${search ? `&search=${encodeURIComponent(search)}` : ""}`,
+        adminUserPageSchema,
+        { token: session?.token, signal },
+      ),
+    getNextPageParam: (page) => page.nextCursor ?? undefined,
+    enabled: session?.user.role === "admin",
+    // Keep the rows on screen while a new search runs, rather than blanking the table.
+    placeholderData: keepPreviousData,
+  });
+  return {
+    ...query,
+    users: query.data?.pages.flatMap((page) => page.users) ?? [],
+    pages: query.data?.pages.map((page) => page.users) ?? [],
+  };
+};
 export const useAuditEntries = () => {
   const { session } = useAuth();
   const query = useQuery({
@@ -37,7 +69,9 @@ export const useSetRestriction = () => {
       ),
     retry: false,
     onSuccess: () => {
+      // Both lists change: the audit gains a row and the user's status moves with it.
       void queryClient.invalidateQueries({ queryKey: auditKey });
+      void queryClient.invalidateQueries({ queryKey: usersKey });
     },
   });
   return { ...mutation, setRestriction: mutation.mutateAsync };

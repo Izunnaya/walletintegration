@@ -3,6 +3,7 @@ import { Prisma } from "../generated/prisma/client.ts";
 import { prisma } from "../models/db.ts";
 import { lockUsersForRestriction } from "../models/transferLocks.ts";
 import type { RestrictionRequest } from "../domain/restrictionRequest.ts";
+import type { AdminUserQuery } from "../domain/adminUserQuery.ts";
 import { databaseIdSchema } from "../domain/transferRequest.ts";
 import { classifyTransactionError } from "../models/transactionErrors.ts";
 
@@ -122,6 +123,91 @@ const blockUser = (req: Request, res: Response<unknown, { body: RestrictionReque
 const unblockUser = (req: Request, res: Response<unknown, { body: RestrictionRequest }>) =>
   applyRestriction(req, res, "unblock");
 
+// The accounts an admin can act on, which is what makes blocking usable: the restriction
+// endpoints take a user id, and before this there was nowhere to learn one.
+//
+// A blacklisted email is a separate record from a blocked user, and the two are not the same
+// refusal: blocking is reversible here, blacklisting is not. The list says which it is so an
+// admin is not offered an unblock that would leave the account just as unable to transact.
+//
+// passwordHash is never selected. The column is one field away in the same row, so the
+// select is explicit rather than a default that a later schema change could widen.
+const listUsers = async (
+  _req: Request,
+  res: Response<unknown, { query: AdminUserQuery }>,
+) => {
+  const { limit, cursor, search } = res.locals.query;
+
+  const matching = search
+    ? {
+        OR: [
+          { name: { contains: search, mode: Prisma.QueryMode.insensitive } },
+          { email: { contains: search, mode: Prisma.QueryMode.insensitive } },
+          {
+            wallets: {
+              some: { publicId: { contains: search, mode: Prisma.QueryMode.insensitive } },
+            },
+          },
+        ],
+      }
+    : {};
+
+  // One extra row to learn whether another page exists, then dropped.
+  const rows = await prisma.user.findMany({
+    where: cursor === undefined ? matching : { AND: [matching, { id: { lt: cursor } }] },
+    orderBy: { id: "desc" },
+    take: limit + 1,
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      role: true,
+      isBlocked: true,
+      createdAt: true,
+      wallets: {
+        where: { currency: "NGN" },
+        select: { publicId: true, currency: true, balanceMinor: true },
+        take: 1,
+      },
+    },
+  });
+
+  const page = rows.slice(0, limit);
+
+  // Blacklisting is keyed by email, so it is one query for the page rather than one per row.
+  const blacklisted = new Set(
+    (
+      await prisma.blacklistEntry.findMany({
+        where: { email: { in: page.map((user) => user.email) } },
+        select: { email: true },
+      })
+    ).map((entry) => entry.email),
+  );
+
+  res.status(200).json({
+    users: page.map((user) => {
+      const wallet = user.wallets[0];
+      return {
+        id: user.id.toString(),
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        isBlocked: user.isBlocked,
+        isBlacklisted: blacklisted.has(user.email),
+        createdAt: user.createdAt.toISOString(),
+        wallet: wallet
+          ? {
+              publicId: wallet.publicId,
+              currency: wallet.currency,
+              balanceMinor: wallet.balanceMinor.toString(),
+            }
+          : null,
+      };
+    }),
+    nextCursor: rows.length > limit ? (page[page.length - 1]?.id.toString() ?? null) : null,
+  });
+};
+
 const listAuditEntries = async (req: Request, res: Response) => {
   const entries = await prisma.adminAuditEntry.findMany({
     orderBy: { id: "desc" },
@@ -151,5 +237,6 @@ const listAuditEntries = async (req: Request, res: Response) => {
 export default {
   blockUser,
   unblockUser,
+  listUsers,
   listAuditEntries,
 };

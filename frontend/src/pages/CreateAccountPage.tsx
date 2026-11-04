@@ -26,8 +26,8 @@ const CreateAccountPage = () => {
       <h1 className="text-3xl font-semibold tracking-tight">
         Create your account.
       </h1>
-      <p className="mb-7 mt-2 text-sm text-muted-foreground">
-        Your NGN wallet starts at zero.
+      <p className="mb-8 mt-2 text-sm text-muted-foreground">
+        New wallets start at ₦0.00.
       </p>
       <div className="mb-5">
         <ApiFeedback error={error} />

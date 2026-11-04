@@ -36,6 +36,22 @@ export const BalanceCardSkeleton = () => (
         <Skeleton width={190} height={62} />
       </div>
     </div>
+    <div className="grid border-t sm:grid-cols-3">
+      {Array.from({ length: 3 }, (_, index) => (
+        <div
+          key={index}
+          className="flex items-start gap-3 border-b px-6 py-5 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0 lg:px-7"
+        >
+          <Skeleton width={32} height={32} />
+          <div className="flex-1">
+            <Skeleton width={90} height={11} />
+            <div className="mt-2">
+              <Skeleton width={110} height={20} />
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
   </section>
 );
 

@@ -58,6 +58,22 @@ async function setupApi(page: Page, role: "customer" | "admin" = "customer") {
       key: string | undefined;
     }[],
     restrictions: [] as { path: string; body: unknown }[],
+    accounts: [
+      {
+        id: "2",
+        name: "Bode Adeyemi",
+        email: "bode@example.com",
+        role: "customer",
+        isBlocked: false,
+        isBlacklisted: false,
+        createdAt,
+        wallet: {
+          publicId: "wlt_" + "b".repeat(32),
+          currency: "NGN",
+          balanceMinor: "25000",
+        },
+      },
+    ],
     failure: 0,
     loginFailure: false,
     invalidLogin: false,
@@ -120,6 +136,21 @@ async function setupApi(page: Page, role: "customer" | "admin" = "customer") {
     }
     if (path === "/auth/register") {
       const body: { name: string; email: string } = request.postDataJSON();
+      // Newest first, the order the real endpoint returns.
+      state.accounts.unshift({
+        id: "333",
+        name: body.name,
+        email: body.email,
+        role: "customer",
+        isBlocked: false,
+        isBlacklisted: false,
+        createdAt,
+        wallet: {
+          publicId: "wlt_" + "c".repeat(32),
+          currency: "NGN",
+          balanceMinor: "0",
+        },
+      });
       return json(
         {
           user: { ...customer, name: body.name, email: body.email },
@@ -224,6 +255,15 @@ async function setupApi(page: Page, role: "customer" | "admin" = "customer") {
           },
         ],
       });
+    if (path === "/admin/users") {
+      const term = (url.searchParams.get("search") ?? "").toLowerCase();
+      const matching = term
+        ? state.accounts.filter((account) =>
+            (account.name + account.email).toLowerCase().includes(term),
+          )
+        : state.accounts;
+      return json({ users: matching, nextCursor: null });
+    }
     if (path.startsWith("/admin/users/")) {
       state.restrictions.push({ path, body: request.postDataJSON() });
       return json({
@@ -256,7 +296,7 @@ async function reviewTransfer(page: Page) {
     .getByRole("link", { name: "Send money", exact: true })
     .first()
     .click();
-  await page.getByLabel("Recipient wallet ID").fill(destinationPublicId);
+  await page.getByLabel("To wallet ID").fill(destinationPublicId);
   await page.getByLabel("Amount (NGN)").fill("1,500.50");
   await page.getByRole("button", { name: "Review transfer" }).click();
   await expect(page.getByRole("dialog")).toBeVisible();
@@ -316,8 +356,8 @@ test("public registration creates a customer and returns to sign-in", async ({
 }) => {
   await setupApi(page);
   await page.goto("/register");
-  await page.getByLabel("Name", { exact: true }).fill("New Customer");
-  await page.getByLabel("Email", { exact: true }).fill("new@example.com");
+  await page.getByLabel("Full name").fill("New Customer");
+  await page.getByLabel("Email address").fill("new@example.com");
   await page
     .getByLabel("Password", { exact: true })
     .fill("correct horse battery staple");
@@ -358,14 +398,14 @@ test("history uses backend cursors and a real transfer detail route", async ({
   const state = await setupApi(page);
   await login(page);
   await page.getByRole("link", { name: "Transactions", exact: true }).click();
-  await page.getByRole("button", { name: "Load older transfers" }).click();
+  await page.getByRole("button", { name: "Next page" }).click();
   await expect(
-    page.getByRole("link", { name: "View transfer 29" }),
+    page.getByRole("row", { name: "View transfer 29" }),
   ).toBeVisible();
   expect(
     state.requests.some((request) => request.path.includes("cursor=30")),
   ).toBe(true);
-  await page.getByRole("link", { name: "View transfer 29" }).click();
+  await page.getByRole("row", { name: "View transfer 29" }).click();
   await expect(page).toHaveURL(/\/transactions\/29$/);
   await expect(page.getByText("reference-29", { exact: true })).toBeVisible();
 });
@@ -415,7 +455,7 @@ test("a network failure preserves the attempt across navigation", async ({
     page.getByRole("button", { name: "Check transfer status" }),
   ).toBeVisible();
   await page
-    .getByRole("button", { name: "Close", exact: true })
+    .getByRole("button", { name: "Go back", exact: true })
     .first()
     .click();
   await page.getByRole("link", { name: "Overview", exact: true }).click();
@@ -423,7 +463,7 @@ test("a network failure preserves the attempt across navigation", async ({
     .getByRole("link", { name: "Send money", exact: true })
     .first()
     .click();
-  await expect(page.getByLabel("Recipient wallet ID")).toBeDisabled();
+  await expect(page.getByLabel("To wallet ID")).toBeDisabled();
   await page.getByRole("button", { name: "Resume transfer" }).click();
   await page.getByRole("button", { name: "Check transfer status" }).click();
   await expect(
@@ -512,7 +552,7 @@ test("signing out clears cached wallet data and pending attempts stay scoped to 
     page.getByRole("button", { name: "Check transfer status" }),
   ).toBeVisible();
   await page
-    .getByRole("button", { name: "Close", exact: true })
+    .getByRole("button", { name: "Go back", exact: true })
     .first()
     .click();
   await page.getByRole("button", { name: "Sign out" }).click();
@@ -528,7 +568,7 @@ test("signing out clears cached wallet data and pending attempts stay scoped to 
   await expect(
     page.getByRole("button", { name: "Resume transfer" }),
   ).toHaveCount(0);
-  await expect(page.getByLabel("Recipient wallet ID")).toBeEnabled();
+  await expect(page.getByLabel("To wallet ID")).toBeEnabled();
   await page.getByRole("button", { name: "Sign out" }).click();
   await login(page);
   await page
@@ -577,7 +617,7 @@ test("server failures show a helpful message without internal IDs and allow a re
   await expect(page.getByText(/wallet-error|Request ID:/)).toHaveCount(0);
   state.walletError = false;
   await page.getByRole("button", { name: "Try again", exact: true }).click();
-  await expect(page.getByText("Wallet balance", { exact: true })).toBeVisible();
+  await expect(page.getByText("Available balance", { exact: true })).toBeVisible();
 });
 
 test("mobile navigation and the installed theme and motion providers work", async ({
@@ -590,10 +630,10 @@ test("mobile navigation and the installed theme and motion providers work", asyn
     page.getByRole("button", { name: "Sign out" }),
   ).not.toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Dark mode", exact: true }),
+    page.getByRole("button", { name: "Switch to dark mode" }),
   ).not.toBeVisible();
   await page.getByRole("button", { name: "Open navigation" }).click();
-  await page.getByRole("button", { name: "Dark mode", exact: true }).click();
+  await page.getByRole("button", { name: "Switch to dark mode" }).click();
   await expect(page.locator("html")).toHaveClass(/dark/);
   await page.getByRole("link", { name: "Transactions", exact: true }).click();
   await expect(
@@ -636,4 +676,88 @@ test("a saved numeric transfer remains recoverable after public IDs are introduc
   await expect(
     page.getByText(destinationPublicId, { exact: true }),
   ).toBeVisible();
+});
+
+test("an account an admin creates appears in user management", async ({
+  page,
+}) => {
+  await setupApi(page, "admin");
+  await login(page);
+  await page.getByRole("link", { name: "Create account", exact: true }).click();
+  await page.getByLabel("Full name").fill("Jamie Taylor");
+  await page.getByLabel("Email address").fill("jamie@example.com");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("correct horse battery staple");
+  await page
+    .getByRole("button", { name: "Create account", exact: true })
+    .click();
+  await expect(page.getByText("A new wallet, ready to go.")).toBeVisible();
+
+  // The list is the point: creating an account that the next screen does not show
+  // sends an admin looking for a record that is already there.
+  await page.getByRole("button", { name: "View accounts" }).click();
+  await expect(
+    page.getByRole("cell", { name: /Jamie Taylor/ }),
+  ).toBeVisible();
+});
+
+test("a created account appears in a user list that was already open", async ({
+  page,
+}) => {
+  await setupApi(page, "admin");
+  await login(page);
+  // Visit the list first, so it is cached before the account exists.
+  await page
+    .getByRole("link", { name: "User management", exact: true })
+    .click();
+  await expect(page.getByRole("cell", { name: /Bode Adeyemi/ })).toBeVisible();
+  await expect(page.getByRole("cell", { name: /Jamie Taylor/ })).toHaveCount(0);
+
+  await page
+    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("link", { name: "Create account", exact: true })
+    .click();
+  await page.getByLabel("Full name").fill("Jamie Taylor");
+  await page.getByLabel("Email address").fill("jamie@example.com");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("correct horse battery staple");
+  await page
+    .getByRole("button", { name: "Create account", exact: true })
+    .click();
+  await expect(page.getByText("A new wallet, ready to go.")).toBeVisible();
+
+  await page
+    .getByRole("link", { name: "User management", exact: true })
+    .click();
+  await expect(page.getByRole("cell", { name: /Jamie Taylor/ })).toBeVisible();
+});
+
+test("searching users does not send a request per keystroke", async ({
+  page,
+}) => {
+  await setupApi(page, "admin");
+  // Counted on the wire rather than in the route handler: a fetch the client aborts has
+  // already left, and the server has already counted it against the rate limit.
+  let sent = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("/admin/users?")) sent += 1;
+  });
+  await login(page);
+  await page
+    .getByRole("link", { name: "User management", exact: true })
+    .click();
+  await expect(page.getByRole("cell", { name: /Bode Adeyemi/ })).toBeVisible();
+
+  const before = sent;
+  // The admin endpoints allow thirty requests a minute. Typing an address unthrottled
+  // spends most of that budget and answers the search itself with a 429.
+  await page.getByLabel("Search users").pressSequentially("bode@example.com", {
+    delay: 30,
+  });
+  await expect(page.getByRole("cell", { name: /Bode Adeyemi/ })).toBeVisible();
+  await page.waitForTimeout(900);
+
+  expect(sent - before).toBeLessThanOrEqual(2);
 });

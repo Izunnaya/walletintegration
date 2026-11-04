@@ -14,7 +14,14 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { ScrollText } from "lucide-react";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 
 const AuditLogPage = () => {
   const query = useAuditEntries();
@@ -22,7 +29,7 @@ const AuditLogPage = () => {
     <>
       <PageHeading
         title="Audit log"
-        description="The latest 50 account restriction changes, newest first."
+        description="Every access change, with the reason it was made."
         action={
           <Button
             variant="outline"
@@ -41,32 +48,58 @@ const AuditLogPage = () => {
         </>
       ) : (
         <section className="overflow-hidden rounded-xl border bg-card">
+          <div className="px-6 py-5">
+            <h2 className="text-[15px] font-semibold">
+              Restriction changes
+              <span className="ml-2 text-muted-foreground">
+                {query.entries.length}
+              </span>
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              The latest 50, newest first.
+            </p>
+          </div>
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Action</TableHead>
+              <TableRow className="bg-muted/40">
+                <TableHead className="pl-6">Action</TableHead>
                 <TableHead>Account</TableHead>
                 <TableHead>Changed by</TableHead>
                 <TableHead>Reason</TableHead>
-                <TableHead>Date</TableHead>
+                <TableHead className="pr-6 text-right">Date</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {query.entries.map((entry) => (
                 <TableRow key={entry.id}>
-                  <TableCell className="capitalize">{entry.action}</TableCell>
+                  <TableCell className="py-4 pl-6">
+                    <span
+                      className="status-badge inline-flex items-center border"
+                      data-status={
+                        entry.action === "block" ? "Blocked" : "Active"
+                      }
+                    >
+                      <span className="size-1.5 rounded-full bg-current" />
+                      {entry.action === "block" ? "Blocked" : "Unblocked"}
+                    </span>
+                  </TableCell>
                   <TableCell>
-                    {entry.affected.email}
-                    <p className="text-xs text-muted-foreground">
+                    <p className="font-medium">{entry.affected.email}</p>
+                    <p className="mt-1 font-mono text-[11px] text-muted-foreground">
                       User {entry.affected.id}
                     </p>
                   </TableCell>
-                  <TableCell>{entry.actor.email}</TableCell>
-                  <TableCell className="max-w-xs whitespace-normal break-words">
+                  <TableCell className="text-xs">{entry.actor.email}</TableCell>
+                  <TableCell className="max-w-xs whitespace-normal break-words text-xs">
                     {entry.reason ?? "No reason recorded"}
                   </TableCell>
-                  <TableCell>
-                    {new Date(entry.createdAt).toLocaleString()}
+                  <TableCell className="pr-6 text-right">
+                    <p className="text-xs">
+                      {new Date(entry.createdAt).toLocaleDateString()}
+                    </p>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      {new Date(entry.createdAt).toLocaleTimeString()}
+                    </p>
                   </TableCell>
                 </TableRow>
               ))}
@@ -75,7 +108,13 @@ const AuditLogPage = () => {
           {!query.isError && query.entries.length === 0 && (
             <Empty>
               <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <ScrollText />
+                </EmptyMedia>
                 <EmptyTitle>No restriction changes recorded</EmptyTitle>
+                <EmptyDescription>
+                  Blocking or unblocking an account will show up here.
+                </EmptyDescription>
               </EmptyHeader>
             </Empty>
           )}

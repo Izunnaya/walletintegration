@@ -11,3 +11,12 @@ export function money(input: string | bigint): string {
   const absolute = value < BigInt(0) ? -value : value
   return `${value < BigInt(0) ? '−' : ''}₦${(absolute / BigInt(100)).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',')}.${(absolute % BigInt(100)).toString().padStart(2, '0')}`
 }
+
+// The overview prints the kobo dimmed against the naira, so it needs the two halves apart.
+// It splits the formatted string rather than the minor units, to keep the thousands
+// grouping and the currency symbol in one place.
+export function moneyParts(input: string | bigint): { whole: string; fraction: string } {
+  const formatted = money(input)
+  const point = formatted.lastIndexOf('.')
+  return { whole: formatted.slice(0, point), fraction: formatted.slice(point + 1) }
+}
