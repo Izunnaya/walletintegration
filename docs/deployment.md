@@ -1,13 +1,15 @@
 # Deployment
 
-The API and the browser client both deploy to Render, as two services from one
-[`render.yaml`](../render.yaml); the database is Neon. All free tiers, and the Neon split is
-deliberate — see **Why Neon rather than Render PostgreSQL** below.
+Three providers, one for each thing that has to run. The API is a Node web service on Render,
+built from [`render.yaml`](../render.yaml). The database is Neon — that split is deliberate, see
+**Why Neon rather than Render PostgreSQL** below. The browser client is a static site on Vercel,
+built from `frontend/`.
 
-The API is a Node web service: a process that runs, sleeps when idle, and talks to the database.
-The frontend is a static site: Vite builds it to files Render serves, so there is no instance, no
-sleep and nothing to wake. They deploy independently, and `buildFilter` on the static site means an
-API-only commit does not rebuild the UI.
+- API: https://walletintegration-6t6r.onrender.com
+- UI: https://walletintegration.vercel.app
+
+The two deploy independently and neither knows about the other, except for one string: the API's
+`CORS_ORIGINS` has to name the UI's origin. All free tiers.
 
 ## The API, once, in the Render dashboard
 
@@ -63,33 +65,37 @@ API-only commit does not rebuild the UI.
    connection string — there is no need for a shell on the web service, which the free plan
    does not provide anyway.
 
-## The frontend, once, in the Render dashboard
+## The frontend, once, in the Vercel dashboard
 
-1. **New → Static Site**, same repository, same branch. Render reads the second service in
-   [`render.yaml`](../render.yaml). Confirm the settings read:
+There is no committed config for this one. Vercel reads the repository and its own project
+settings, so unlike the API there is no file here that describes the deploy.
 
-   | Setting | Value |
-   | --- | --- |
-   | Root directory | `frontend` |
-   | Build command | `npm ci && npm run build` |
-   | Publish directory | `./dist` |
+1. **Import the repository** and set **Root directory** to `frontend`. Vercel detects Vite and
+   fills the rest in: `npm run build`, output `dist`. `npm run build` is `tsc -b && vite build`,
+   so a type error fails the deploy rather than shipping a broken bundle.
 
-2. **There are no secrets to set.** `VITE_API_BASE_URL` is in the blueprint with a value, not
-   `sync: false`, because Vite inlines every `VITE_` variable into the bundle at build time — the
-   value is public the moment the site ships, so hiding it in the dashboard would buy nothing and
-   cost a reviewable diff. Change the API it points at by editing the blueprint.
+2. **Set `VITE_API_BASE_URL`** in Project Settings → Environment Variables, to the API's URL with
+   no trailing slash. It is not a secret and does not need to be treated as one: Vite inlines every
+   `VITE_` variable into the bundle at build time, so the value is readable by anyone who opens the
+   deployed JavaScript. It does mean changing which API the UI talks to is a rebuild, not a restart.
 
-3. **Then add the new origin to the API's `CORS_ORIGINS`** and redeploy the API. This is the step
-   that is easy to miss, because nothing about it looks like a frontend problem: the UI loads, the
-   API answers correctly, and the browser throws every response away. Render only tells you the
-   static site's URL once the service exists, which is why this cannot be done first.
+3. **Add the UI's origin to the API's `CORS_ORIGINS`** on Render, and redeploy the API:
 
    ```
-   CORS_ORIGINS=https://wallet-frontend.onrender.com
+   CORS_ORIGINS=https://walletintegration.vercel.app
    ```
 
    Comma-separated if there is more than one, no trailing slash, and the scheme matters — an origin
    is scheme, host and port, so `http://` will not match `https://`.
+
+   This is the step that is easy to miss, because nothing about it looks like a frontend problem:
+   the UI loads, the API answers correctly, and the browser throws every response away.
+
+**Preview deployments will not reach the API.** Vercel gives every branch and pull request its own
+hostname, and the API matches `CORS_ORIGINS` exactly, so a preview is refused by the browser even
+though production works. That is the allowlist doing its job rather than a fault — a wallet API
+should not answer any origin that asks. To exercise a branch against the live API, run it locally
+with `VITE_API_BASE_URL` pointed at the API, which is already an allowed origin in development.
 
 ## Checks that prove it is actually up
 
@@ -114,10 +120,11 @@ curl -sX POST https://<service>.onrender.com/auth/login \
 **The first request after a pause is slow.** Free web services sleep when idle, and waking takes
 tens of seconds. Say so in the submission rather than letting a reviewer discover it.
 
-**A reload on `/transfer` works, and that is a setting, not luck.** React Router owns the URL
-after the first load, so a direct visit or a refresh asks Render for a file that does not exist.
-The `rewrite` route in the blueprint serves `index.html` for anything that is not a real file.
-Remove it and every URL except `/` answers 404 — which looks like a broken router and is not.
+**A reload on `/transfer` works, and it is Vercel doing that.** React Router owns the URL after
+the first load, so a direct visit or a refresh asks the host for a file that does not exist.
+Vercel's Vite preset already serves `index.html` for anything that is not a real file, so there is
+nothing to configure. Worth knowing because it is host behaviour, not application behaviour: on a
+host without that fallback, every URL except `/` answers 404 and it looks like a broken router.
 
 **`index.ts` runs `SELECT 1` before it listens.** That is deliberate: it means the process pays for
 the connection handshake rather than the first user, and the service refuses to start at all if the

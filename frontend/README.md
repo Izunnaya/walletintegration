@@ -16,21 +16,23 @@ Open http://localhost:3001. `VITE_API_BASE_URL` defaults to http://localhost:300
 
 ## Deploy
 
-A static site on Render, built from this directory by the second service in
-[`render.yaml`](../render.yaml): `npm ci && npm run build`, published from `./dist`. `npm run build`
-is `tsc -b && vite build`, so a type error fails the deploy rather than shipping.
+Live at https://walletintegration.vercel.app, deployed by Vercel from this directory with the root
+directory set to `frontend`. Vercel detects Vite and runs `npm run build`, publishing `dist`. That
+script is `tsc -b && vite build`, so a type error fails the deploy rather than shipping.
 
-`VITE_API_BASE_URL` is set in the blueprint rather than the dashboard. Vite inlines every `VITE_`
-variable into the bundle at build time, so the value is public once the site ships and there is
-nothing to hide — but it does mean changing the API the deployed UI talks to is a rebuild, not a
-restart.
+There is no deploy config in this repository — it lives in Vercel's project settings, which is
+worth knowing before looking for a file that is not here. Two pieces of it matter:
 
-Two settings carry the whole deployment, and both fail in ways that do not look like their cause.
-The blueprint's `rewrite` route serves `index.html` for any path that is not a real file, because
-React Router owns the URL after the first load and a refresh on `/transfer` would otherwise 404.
-And the API's `CORS_ORIGINS` has to name this site's origin: without it the page loads, the API
-answers correctly, and the browser throws every response away. [docs/deployment.md](../docs/deployment.md)
-has the order to do these in.
+`VITE_API_BASE_URL` is a Vercel environment variable. It is not a secret: Vite inlines every
+`VITE_` variable into the bundle at build time, so it is readable by anyone who opens the deployed
+JavaScript. It does mean pointing the UI at a different API is a rebuild, not a restart.
+
+The API's `CORS_ORIGINS` has to name this site's origin, or the page loads, the API answers
+correctly, and the browser throws every response away. Preview deployments get their own Vercel
+hostnames and so are not on that allowlist; run a branch locally against the API instead.
+Refreshing on a route like `/transfer` works because Vercel serves `index.html` for anything that
+is not a real file — host behaviour, not something this app configures.
+[docs/deployment.md](../docs/deployment.md) has the whole sequence.
 
 ## Screens and backend coverage
 

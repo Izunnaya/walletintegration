@@ -7,6 +7,7 @@ Closed system. No banks, no payment providers, no queues. Every transfer complet
 PostgreSQL transaction, which is why there is nothing to wait on and no event system.
 
 **Live API:** https://walletintegration-6t6r.onrender.com
+**Live UI:** https://walletintegration.vercel.app
 
 ---
 
@@ -173,10 +174,10 @@ What the suite does **not** establish is listed in
 
 ## Deployment
 
-Live on Render as two services from one [`render.yaml`](render.yaml): the API as a Node web
-service built from `server/`, and the browser client as a static site built from `frontend/`.
-[docs/deployment.md](docs/deployment.md) has the step-by-step and the checks that prove it
-is up.
+The API runs on Render, built from `server/` by [`render.yaml`](render.yaml). The browser
+client is a separate static deploy on Vercel, built from `frontend/`, configured in Vercel's
+own project settings rather than in this repository. [docs/deployment.md](docs/deployment.md)
+has the step-by-step and the checks that prove it is up.
 
 - Secrets (`DATABASE_URL`, `JWT_SECRET`, `SEED_ADMIN_PASSWORD`) live in Render environment
   variables, never in the repository.
@@ -190,10 +191,11 @@ is up.
   [docs/known-limitations.md](docs/known-limitations.md) for why the deployed value is still
   outstanding and what it does and does not affect.
 - The free plan sleeps when idle, so the first request after a pause takes up to a minute.
-  The UI shows a notice rather than appearing to hang. The static site does not sleep — it is
+  The UI shows a notice rather than appearing to hang. The Vercel side does not sleep — it is
   files, not a process — so a cold start is always the API, never the page.
-- The frontend's `CORS_ORIGINS` entry on the API is what makes the deployed UI work at all.
-  Without it the page loads and the browser discards every response.
+- The UI's origin has to be in the API's `CORS_ORIGINS`, or the page loads and the browser
+  discards every response. Vercel preview deployments get their own hostnames, so they are not
+  on that allowlist and cannot reach the API.
 
 ### Rate limits
 
