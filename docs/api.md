@@ -230,6 +230,12 @@ is reversible through the endpoints below, blacklisting is keyed by email and is
 `passwordHash` is never selected. `wallet` is null for an account without an NGN wallet, which the
 schema allows even though registration always creates one.
 
+`status` narrows the list to `active`, `blocked` or `blacklisted`; the default `all` does not
+narrow it. The three partition the accounts rather than overlapping, because blacklisted
+outranks blocked: an account that is both is only `blacklisted`, which is the restriction an
+admin cannot lift here. Filtering happens in the database, so a blocked account is found without
+paging to it.
+
 `limit` is 1 to 100. An unknown query parameter is refused `400`.
 
 ### POST /admin/users/:id/block and /unblock

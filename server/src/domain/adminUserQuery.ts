@@ -23,6 +23,11 @@ export const adminUserQuerySchema = z.strictObject({
   // Matched against name, email and wallet id. Bounded because it reaches a LIKE, and an
   // unbounded pattern is an invitation to make the database do unbounded work.
   search: z.string().trim().max(120).optional(),
+
+  // The same three states the list renders as badges. Blacklisted takes precedence over
+  // blocked, so the filters partition the accounts rather than overlapping: an account that
+  // is both is blacklisted, because that is the restriction an admin cannot lift here.
+  status: z.enum(["all", "active", "blocked", "blacklisted"]).default("all"),
 });
 
 export type AdminUserQuery = z.infer<typeof adminUserQuerySchema>;

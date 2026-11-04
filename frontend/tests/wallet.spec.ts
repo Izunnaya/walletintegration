@@ -73,6 +73,34 @@ async function setupApi(page: Page, role: "customer" | "admin" = "customer") {
           balanceMinor: "25000",
         },
       },
+      {
+        id: "3",
+        name: "Lana Steiner",
+        email: "lana@example.com",
+        role: "customer",
+        isBlocked: true,
+        isBlacklisted: false,
+        createdAt,
+        wallet: {
+          publicId: "wlt_" + "d".repeat(32),
+          currency: "NGN",
+          balanceMinor: "8500",
+        },
+      },
+      {
+        id: "4",
+        name: "Demi Wilkinson",
+        email: "demi@example.com",
+        role: "customer",
+        isBlocked: false,
+        isBlacklisted: true,
+        createdAt,
+        wallet: {
+          publicId: "wlt_" + "e".repeat(32),
+          currency: "NGN",
+          balanceMinor: "0",
+        },
+      },
     ],
     failure: 0,
     loginFailure: false,
@@ -257,11 +285,18 @@ async function setupApi(page: Page, role: "customer" | "admin" = "customer") {
       });
     if (path === "/admin/users") {
       const term = (url.searchParams.get("search") ?? "").toLowerCase();
-      const matching = term
+      const wanted = url.searchParams.get("status") ?? "all";
+      let matching = term
         ? state.accounts.filter((account) =>
             (account.name + account.email).toLowerCase().includes(term),
           )
         : state.accounts;
+      if (wanted === "blacklisted")
+        matching = matching.filter((a) => a.isBlacklisted);
+      else if (wanted === "blocked")
+        matching = matching.filter((a) => a.isBlocked && !a.isBlacklisted);
+      else if (wanted === "active")
+        matching = matching.filter((a) => !a.isBlocked && !a.isBlacklisted);
       return json({ users: matching, nextCursor: null });
     }
     if (path.startsWith("/admin/users/")) {
@@ -760,4 +795,44 @@ test("searching users does not send a request per keystroke", async ({
   await page.waitForTimeout(900);
 
   expect(sent - before).toBeLessThanOrEqual(2);
+});
+
+test("the status filter narrows the user list through the server", async ({
+  page,
+}) => {
+  await setupApi(page, "admin");
+  // Recorded on the wire: the point is that the status reaches the server, not that the
+  // browser hid rows it had already loaded.
+  const asked: string[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/admin/users?")) asked.push(request.url());
+  });
+  await login(page);
+  await page
+    .getByRole("link", { name: "User management", exact: true })
+    .click();
+  await expect(page.getByRole("cell", { name: /Bode Adeyemi/ })).toBeVisible();
+  await expect(page.getByRole("cell", { name: /Lana Steiner/ })).toBeVisible();
+
+  await page.getByRole("tab", { name: "Blocked" }).click();
+  await expect(page.getByRole("cell", { name: /Lana Steiner/ })).toBeVisible();
+  await expect(page.getByRole("cell", { name: /Bode Adeyemi/ })).toHaveCount(0);
+  // Blacklisted outranks blocked, so it must not appear under Blocked.
+  await expect(
+    page.getByRole("cell", { name: /Demi Wilkinson/ }),
+  ).toHaveCount(0);
+
+  await page.getByRole("tab", { name: "Blacklisted" }).click();
+  await expect(
+    page.getByRole("cell", { name: /Demi Wilkinson/ }),
+  ).toBeVisible();
+  await expect(page.getByRole("cell", { name: /Lana Steiner/ })).toHaveCount(0);
+
+  await page.getByRole("tab", { name: "Active" }).click();
+  await expect(page.getByRole("cell", { name: /Bode Adeyemi/ })).toBeVisible();
+  await expect(page.getByRole("cell", { name: /Lana Steiner/ })).toHaveCount(0);
+
+  expect(asked.some((url) => url.includes("status=blocked"))).toBe(true);
+  expect(asked.some((url) => url.includes("status=blacklisted"))).toBe(true);
+  expect(asked.some((url) => url.includes("status=active"))).toBe(true);
 });

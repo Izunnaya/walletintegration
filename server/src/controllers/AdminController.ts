@@ -136,7 +136,26 @@ const listUsers = async (
   _req: Request,
   res: Response<unknown, { query: AdminUserQuery }>,
 ) => {
-  const { limit, cursor, search } = res.locals.query;
+  const { limit, cursor, search, status } = res.locals.query;
+
+  // Blacklisting is keyed by email with no relation to the user row, so membership is its own
+  // lookup. The spec has this table filled by the seed, which is why reading it whole is
+  // reasonable; the status filter needs it before the page is chosen, not after.
+  const blacklistedEmails = (
+    await prisma.blacklistEntry.findMany({ select: { email: true } })
+  ).map((entry) => entry.email);
+  const blacklisted = new Set(blacklistedEmails);
+
+  // An empty blacklist behaves correctly here: `in: []` matches nothing, `notIn: []` matches
+  // everything, which is what each of these means when nothing is blacklisted.
+  const byStatus =
+    status === "blacklisted"
+      ? { email: { in: blacklistedEmails } }
+      : status === "blocked"
+        ? { isBlocked: true, email: { notIn: blacklistedEmails } }
+        : status === "active"
+          ? { isBlocked: false, email: { notIn: blacklistedEmails } }
+          : {};
 
   // The funding account is not an account anyone administers. It has no usable login, only
   // the seed moves money out of it, and its balance is negative by design because every
@@ -161,7 +180,12 @@ const listUsers = async (
   // One extra row to learn whether another page exists, then dropped.
   const rows = await prisma.user.findMany({
     where: {
-      AND: [notSystem, matching, ...(cursor === undefined ? [] : [{ id: { lt: cursor } }])],
+      AND: [
+        notSystem,
+        matching,
+        byStatus,
+        ...(cursor === undefined ? [] : [{ id: { lt: cursor } }]),
+      ],
     },
     orderBy: { id: "desc" },
     take: limit + 1,
@@ -181,16 +205,6 @@ const listUsers = async (
   });
 
   const page = rows.slice(0, limit);
-
-  // Blacklisting is keyed by email, so it is one query for the page rather than one per row.
-  const blacklisted = new Set(
-    (
-      await prisma.blacklistEntry.findMany({
-        where: { email: { in: page.map((user) => user.email) } },
-        select: { email: true },
-      })
-    ).map((entry) => entry.email),
-  );
 
   res.status(200).json({
     users: page.map((user) => {

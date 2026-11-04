@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import { ChevronLeft, ChevronRight, Plus, Search, Users } from "lucide-react";
 import { useUsers, useSetRestriction } from "@/api/AdminApi";
+import type { UserStatusFilter } from "@/api/AdminApi";
 import { useAuth } from "@/auth/AuthProvider";
 import { useRetryAfter } from "@/hooks/useRetryAfter";
 import { useDebounced } from "@/hooks/useDebounced";
@@ -43,6 +44,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { money } from "@/lib/money";
+import { cn } from "@/lib/utils";
 import type { AdminUser } from "@/api/contracts";
 
 // Blacklisting is keyed by email and is not lifted from here, so it is a third status rather
@@ -53,13 +55,22 @@ function status(user: AdminUser): "Blacklisted" | "Blocked" | "Active" {
   return user.isBlocked ? "Blocked" : "Active";
 }
 
+// The same partition the server filters on, in the order the table reads.
+const filters: { id: UserStatusFilter; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "active", label: "Active" },
+  { id: "blocked", label: "Blocked" },
+  { id: "blacklisted", label: "Blacklisted" },
+];
+
 const UserManagementPage = () => {
   const { session } = useAuth();
   const [search, setSearch] = useState("");
+  const [statusFilter, setStatusFilter] = useState<UserStatusFilter>("all");
   const [page, setPage] = useState(0);
   const [managing, setManaging] = useState<AdminUser | null>(null);
   const [reason, setReason] = useState("");
-  const query = useUsers(useDebounced(search));
+  const query = useUsers(useDebounced(search), statusFilter);
   const { setRestriction, isPending, error, reset } = useSetRestriction();
   const retryAfter = useRetryAfter(error);
 
@@ -119,18 +130,43 @@ const UserManagementPage = () => {
         </>
       ) : (
         <section className="overflow-hidden rounded-xl border">
-          <div className="flex flex-wrap items-center justify-between gap-4 p-5">
-            <div>
-              <h2 className="text-sm font-semibold">
-                All users
-                <span className="ml-2 text-muted-foreground">
-                  {query.users.length}
-                  {query.hasNextPage ? "+" : ""}
-                </span>
-              </h2>
-              <p className="mt-1 text-xs text-muted-foreground">
-                Manage access to your wallet workspace.
-              </p>
+          <div className="p-5">
+            <h2 className="text-sm font-semibold">
+              All users
+              <span className="ml-2 text-muted-foreground">
+                {query.users.length}
+                {query.hasNextPage ? "+" : ""}
+              </span>
+            </h2>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Manage access to your wallet workspace.
+            </p>
+          </div>
+          <div className="flex flex-wrap justify-between gap-3 border-t px-5 py-4">
+            <div
+              role="tablist"
+              aria-label="Filter by status"
+              className="inline-flex h-8 w-fit items-center rounded-lg bg-muted p-[3px] text-muted-foreground"
+            >
+              {filters.map(({ id, label }) => (
+                <button
+                  key={id}
+                  type="button"
+                  role="tab"
+                  aria-selected={statusFilter === id}
+                  onClick={() => {
+                    setStatusFilter(id);
+                    setPage(0);
+                  }}
+                  className={cn(
+                    "inline-flex h-[calc(100%-1px)] flex-1 items-center justify-center rounded-md border border-transparent px-1.5 py-0.5 text-sm font-medium whitespace-nowrap transition-all hover:text-foreground",
+                    statusFilter === id &&
+                      "border-border bg-background text-foreground",
+                  )}
+                >
+                  {label}
+                </button>
+              ))}
             </div>
             <div className="relative">
               <Search className="pointer-events-none absolute left-3 top-2.5 size-4 text-muted-foreground" />
@@ -211,9 +247,15 @@ const UserManagementPage = () => {
                 <EmptyMedia variant="icon">
                   <Users />
                 </EmptyMedia>
-                <EmptyTitle>No users found</EmptyTitle>
+                <EmptyTitle>
+                  {statusFilter === "all"
+                    ? "No users found"
+                    : `No ${statusFilter} accounts`}
+                </EmptyTitle>
                 <EmptyDescription>
-                  Try another name, email, or wallet ID.
+                  {statusFilter === "all"
+                    ? "Try another name, email, or wallet ID."
+                    : "Try another status, name, email, or wallet ID."}
                 </EmptyDescription>
               </EmptyHeader>
             </Empty>

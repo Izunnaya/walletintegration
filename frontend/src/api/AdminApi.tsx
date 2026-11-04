@@ -12,16 +12,18 @@ import { adminUserPageSchema, auditSchema, restrictionSchema } from "./contracts
 const auditKey = ["admin", "audit"] as const;
 const usersKey = ["admin", "users"] as const;
 
+export type UserStatusFilter = "all" | "active" | "blocked" | "blacklisted";
+
 // The accounts an admin can act on. The search goes to the server rather than filtering the
 // page in the browser, so looking for one account among many finds it without paging to it.
-export const useUsers = (search: string) => {
+export const useUsers = (search: string, status: UserStatusFilter = "all") => {
   const { session } = useAuth();
   const query = useInfiniteQuery({
-    queryKey: [...usersKey, session?.user.id, search],
+    queryKey: [...usersKey, session?.user.id, search, status],
     initialPageParam: null as string | null,
     queryFn: ({ pageParam, signal }) =>
       apiRequest(
-        `/admin/users?limit=20${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ""}${search ? `&search=${encodeURIComponent(search)}` : ""}`,
+        `/admin/users?limit=20${pageParam ? `&cursor=${encodeURIComponent(pageParam)}` : ""}${search ? `&search=${encodeURIComponent(search)}` : ""}${status === "all" ? "" : `&status=${status}`}`,
         adminUserPageSchema,
         { token: session?.token, signal },
       ),
