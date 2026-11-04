@@ -117,6 +117,7 @@ describe("atomic, idempotent transfers over HTTP", () => {
     expect((await send(destination.token, request)).status).toBe(403);
     expect((await send(source.token, { ...request, destinationWalletId: `wlt_${"0".repeat(32)}` })).status).toBe(404);
     expect((await send(source.token, { ...request, destinationWalletId: "wlt_invalid" })).status).toBe(400);
+    expect((await send(source.token, { ...request, sourceWalletId: `wlt_${"0".repeat(32)}`, destinationWalletId: `wlt_${"1".repeat(32)}` })).status).toBe(404);
     await assertBooksBalance();
   });
 
@@ -149,20 +150,7 @@ describe("atomic, idempotent transfers over HTTP", () => {
 
   it("twenty concurrent duplicate keys create exactly one transfer and one ledger pair", async () => {
     const source = await account(); const destination = await account(0n); const key = randomUUID();
-    // Twenty at once, with every other request naming the wallets by their public id rather
-    // than their numeric one. Both representations must resolve to the same idempotency
-    // record, or a client that switched form would be able to send the transfer twice.
-    const responses = await Promise.all(
-      Array.from({ length: 20 }, (_, index) =>
-        send(
-          source.token,
-          index % 2
-            ? { ...body(source, destination), sourceWalletId: source.publicId, destinationWalletId: destination.publicId }
-            : body(source, destination),
-          key,
-        ),
-      ),
-    );
+    const responses = await Promise.all(Array.from({ length: 20 }, (_, index) => send(source.token, index % 2 ? { ...body(source, destination), sourceWalletId: source.publicId, destinationWalletId: destination.publicId } : body(source, destination), key)));
     for (let response of responses) {
       if (response.status === 503) response = await send(source.token, body(source, destination), key);
       expect(response.status).toBe(201);

@@ -1,70 +1,73 @@
 # Deployment
 
-The API deploys to Render. The database is Neon. Both are free tiers. See
-[ADR 19](decisions.md) for why the database is not Render PostgreSQL.
+The API deploys to Render; the database is Neon. Both are free tiers, and the split is
+deliberate — see **Why Neon rather than Render PostgreSQL** below.
 
-## Setup
+## What you do once, in the Render dashboard
 
-1. **New > Web Service.** Connect the repository and pick the branch.
-
-2. Render reads [`render.yaml`](../render.yaml) and fills in the rest. Confirm it matches:
+1. **New → Web Service**, connect `Izunnaya/walletintegration`, pick the branch.
+2. Render reads [`render.yaml`](../render.yaml) and fills in the root directory, build command,
+   start command and health check path. Confirm they read:
 
    | Setting | Value |
    | --- | --- |
    | Root directory | `server` |
-   | Build command | `npm ci --include=dev && npm run migrate && npm run build` |
+   | Build command | `npm ci && npm run migrate && npm run build` |
    | Start command | `npm start` |
    | Health check path | `/health/ready` |
 
-3. **Set the environment variables.** The secrets are marked `sync: false` in the blueprint, so
-   Render asks for them instead of reading them from the repository.
+3. **Set three environment variables.** They are marked `sync: false` in the blueprint, which
+   means Render will not read them from the repository — it asks you, and they are never
+   committed.
 
-   | Variable | Value |
+   | Variable | Where it comes from |
    | --- | --- |
-   | `DATABASE_URL` | Neon > your project > Connect. Use the pooled connection string |
-   | `JWT_SECRET` | Generate a fresh one. Do not reuse the local value |
-   | `SEED_ADMIN_PASSWORD` | Your choice. Share with reviewers privately |
-   | `CORS_ORIGINS` | Where the browser client is served from, comma-separated |
-   | `TRUST_PROXY_HOPS` | The number of proxies in front of the service. Defaults to `0` |
+   | `DATABASE_URL` | Neon → your project → Connect. Use the **pooled** connection string here |
+   | `JWT_SECRET` | Generate a fresh one. **Do not reuse the local value** |
+   | `SEED_ADMIN_PASSWORD` | Your choice. Shared with reviewers privately, never published |
+   | `CORS_ORIGINS` | Where the browser client is served from, comma-separated. Omit until there is one |
 
-   Generate the secret:
+   Generate the secret with:
 
    ```sh
    node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
    ```
 
-   `TRUST_PROXY_HOPS` needs the real hop count from the ingress logs. Until it is set, IP-keyed
-   rate limits bucket every caller together. See [known-limitations.md](known-limitations.md).
-
 4. **Deploy.** Watch the build log for `prisma migrate deploy` applying `0_init`, then
-   `server_listening`.
+   `Server started`.
 
-5. **Seed once, by hand.** The seed never runs on startup. Running it twice changes nothing.
+5. **Seed once, by hand.** Render's shell, or locally with `DATABASE_URL` pointed at the
+   deployed database:
 
    ```sh
    npm run seed
    ```
 
-6. **Set the admin password.** The seed writes it once and never resets it.
+   It is never run automatically on startup, and running it twice changes nothing.
+
+6. **Set the admin password.** The seed writes it once and never resets it, so a database
+   seeded before `SEED_ADMIN_PASSWORD` existed keeps whatever default it was given. Set it
+   deliberately:
 
    ```sh
    SEED_ADMIN_PASSWORD='...' npm run admin:password
    ```
 
-   The database is Neon rather than Render-internal, so both commands run from anywhere with
-   the connection string. The free plan has no shell.
+   The database is Neon rather than Render-internal, so this runs from anywhere with the
+   connection string — there is no need for a shell on the web service, which the free plan
+   does not provide anyway.
 
-## Verifying the deploy
+## Checks that prove it is actually up
 
 ```sh
 curl -i https://<service>.onrender.com/health/live     # 200 {"status":"ok"}
-curl -i https://<service>.onrender.com/health/ready    # 200 {"status":"ready"}
+curl -i https://<service>.onrender.com/health/ready     # 200 {"status":"ready"}
 ```
 
-`live` answers while the database is unreachable. `ready` does not. A `503` from `ready` means
-the process is fine and the database is not.
+`live` answers while the database is unreachable; `ready` does not. If `ready` returns `503` the
+process is fine and the database is not, which is the distinction the health check exists to make.
 
-Then the full path:
+Then the full path, with the seeded credentials:
 
 ```sh
 curl -sX POST https://<service>.onrender.com/auth/login \
@@ -72,27 +75,33 @@ curl -sX POST https://<service>.onrender.com/auth/login \
   -d '{"email":"ada@example.com","password":"demo-password-2026"}'
 ```
 
-## Expected behavior that looks wrong
+## Things that will look like bugs and are not
 
-The first request after a pause takes tens of seconds. Free web services sleep when idle.
+**The first request after a pause is slow.** Free web services sleep when idle, and waking takes
+tens of seconds. Say so in the submission rather than letting a reviewer discover it.
 
-`index.ts` runs `SELECT 1` before it listens. The process pays for the connection handshake
-instead of the first user, and the service refuses to start if the database is unreachable
-rather than accepting requests it cannot serve.
+**`index.ts` runs `SELECT 1` before it listens.** That is deliberate: it means the process pays for
+the connection handshake rather than the first user, and the service refuses to start at all if the
+database is unreachable, instead of accepting requests it cannot serve.
 
-## Migrations
+## Why Neon rather than Render PostgreSQL
 
-`npm run migrate` is `prisma migrate deploy`. It runs in the build command because the free
-plan has no separate pre-deploy phase.
+A free Render PostgreSQL database becomes inaccessible 30 days after creation, with a 14-day grace
+period that does not keep it working. The build spec is explicit that a README warning does not
+satisfy "a live URL we can hit", so that clock would have to be tracked and the database upgraded
+before submission.
 
-It applies pending migrations and nothing else. It never generates, never resets and never
-touches data. A failed migration fails the build, so a broken schema change does not reach a
-running service.
+Neon's free tier does not expire that way, and Render connects to it over the network like any other
+host. That removes the deadline entirely — see [ADR 19](decisions.md).
 
-## The pooled endpoint
+One consequence worth knowing: the pooled Neon endpoint is PgBouncer, which rejects startup
+parameters and shares session state between clients. The application uses the pooled endpoint and
+does not set any; the integration tests use the direct endpoint, because they do. See
+`server/tests/database.ts`.
 
-Neon's pooled endpoint is PgBouncer. It rejects startup parameters and shares session state
-between clients.
+## Migrations on deploy
 
-The application uses the pooled endpoint and sets no startup parameters. The integration tests
-use the direct endpoint, because they set `search_path`. See `server/tests/database.ts`.
+`npm run migrate` is `prisma migrate deploy`, and it runs in the build command because the free plan
+has no separate pre-deploy phase. It applies pending migrations and nothing else — it never
+generates, never resets, and never touches data. A migration that fails fails the build, so a broken
+schema change does not reach a running service.

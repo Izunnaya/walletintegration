@@ -7,6 +7,7 @@ if (!/^[a-z_][a-z0-9_]*$/.test(databaseSchema)) throw new Error("Invalid databas
 const namespace = Prisma.raw(`"${databaseSchema}"`);
 
 export async function lockTransferParties(client: Prisma.TransactionClient, walletIds: bigint[]) {
+  if (walletIds.length === 0) return { users: [], wallets: [] };
   // The subquery discovers immutable owners in the same round trip that locks users.
   // NO KEY UPDATE blocks restrictions while remaining compatible with the claim's FK lock.
   const users = await client.$queryRaw<{ id: bigint; email: string; isBlocked: boolean }[]>`
@@ -15,8 +16,6 @@ export async function lockTransferParties(client: Prisma.TransactionClient, wall
       SELECT owner_id FROM ${namespace}.wallets WHERE id IN (${Prisma.join(walletIds)})
     ) ORDER BY id FOR NO KEY UPDATE
   `;
-  // No owners means no such wallets. Returning here avoids taking a wallet lock for ids that
-  // cannot resolve.
   if (users.length === 0) return { users, wallets: [] };
   const wallets = await client.$queryRaw<(WalletState & { publicId: string })[]>`
     SELECT id, public_id AS "publicId", owner_id AS "ownerId", currency, balance_minor AS "balanceMinor", is_system AS "isSystem"
