@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { once } from "node:events";
 import type { Server } from "node:http";
 import { apiPrisma, prepareApiDatabase, closeApiDatabase } from "./apiDatabase.ts";
+import * as restrictionLocks from "../src/models/transferLocks.ts";
 import { hashPassword } from "../src/models/password.ts";
 
 vi.mock("../src/models/db.ts", async () => {
@@ -76,6 +77,37 @@ afterAll(async () => {
 });
 
 describe("admin authorisation", () => {
+  it.each(["demoted", "blocked"])("refuses an admin %s after the initial permission check", async (change) => {
+    const actor = await createUser(`${change}-during-request@example.com`, "admin");
+    let entered!: () => void;
+    let release!: () => void;
+    const reachedLock = new Promise<void>((resolve) => { entered = resolve; });
+    const continueRequest = new Promise<void>((resolve) => { release = resolve; });
+    const original = restrictionLocks.lockUsersForRestriction;
+    const lock = vi.spyOn(restrictionLocks, "lockUsersForRestriction").mockImplementationOnce(async (...args) => {
+      entered();
+      await continueRequest;
+      return original(...args);
+    });
+    const before = await apiPrisma.adminAuditEntry.count();
+    const pending = restrict("block", customerId, actor.token, { reason: "Review account" });
+    try {
+      await reachedLock;
+      await apiPrisma.user.update({
+        where: { id: actor.id },
+        data: change === "demoted" ? { role: "customer" } : { isBlocked: true },
+      });
+      release();
+      expect((await pending).status).toBe(403);
+      expect((await apiPrisma.user.findUniqueOrThrow({ where: { id: customerId } })).isBlocked).toBe(false);
+      expect(await apiPrisma.adminAuditEntry.count()).toBe(before);
+    } finally {
+      release();
+      await pending;
+      lock.mockRestore();
+    }
+  });
+
   it("refuses a customer with 403, and leaves the account untouched", async () => {
     const response = await restrict("block", adminId, customerToken, { reason: "escalating" });
 

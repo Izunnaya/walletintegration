@@ -3,11 +3,6 @@ import { prisma } from "../models/db.ts";
 import type { TransferHistoryQuery } from "../domain/transferHistoryQuery.ts";
 import { databaseIdSchema } from "../domain/transferRequest.ts";
 
-// Transfers the caller is a party to. Never anyone else's.
-//
-// The wallets are resolved from the token's user id, and the filter is built from those
-// wallet ids rather than from anything in the request, so there is no id to tamper with.
-
 type TransferRow = {
   sourceWallet: { publicId: string };
   destinationWallet: { publicId: string };
@@ -71,11 +66,7 @@ const listTransfers = async (
     ],
   };
 
-  // Keyset pagination on the primary key, not OFFSET. Transfers are only ever inserted, so
-  // id descending is a stable order: a page cannot shift or repeat a row because something
-  // was written while the caller was reading. OFFSET would do exactly that.
-  //
-  // One extra row is fetched to learn whether another page exists, then dropped.
+  // Fetch one extra row to find the next cursor without an offset.
   const rows = await prisma.transfer.findMany({
     where: cursor === undefined ? involvesCaller : { AND: [involvesCaller, { id: { lt: cursor } }] },
     orderBy: { id: "desc" },
@@ -106,9 +97,6 @@ const getTransfer = async (req: Request, res: Response) => {
   const caller = req.caller;
   if (!caller) throw new Error("verifyToken is required before getTransfer");
 
-  // Express types a route parameter as string | string[], so the shape is checked before the
-  // value is. Anything that is not a plain run of digits is answered 404 rather than 400,
-  // because a caller guessing at ids should learn nothing from the difference.
   const requested = databaseIdSchema.safeParse(req.params.id);
   if (!requested.success) {
     res.status(404).json({
@@ -144,10 +132,7 @@ const getTransfer = async (req: Request, res: Response) => {
     },
   });
 
-  // 404, not 403, when the transfer exists but belongs to someone else. A 403 would confirm
-  // the id is real, which is a way of enumerating other people's transfers. The ownership
-  // filter is part of the query rather than a check afterwards, so there is no path where a
-  // row is fetched and then forgotten to be checked.
+  // Ownership is part of the query; absent and inaccessible records both return 404.
   if (!transfer) {
     res.status(404).json({
       error: {

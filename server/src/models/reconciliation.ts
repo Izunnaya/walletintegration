@@ -1,24 +1,11 @@
 import { Prisma } from "../generated/prisma/client.ts";
 
-// The reconciliation checks themselves. They take a transaction client and never open one,
-// so the caller owns the boundary - the command wraps them in a read-only REPEATABLE READ
-// transaction, and the tests point them at a schema of their own.
-//
-// Each check returns the rows that are WRONG. An empty array is a pass, which means a check
-// that cannot find anything is indistinguishable from a check that is broken - so the tests
-// inject each kind of damage and confirm it is seen.
-
 export type Check = {
   name: string;
   detail: string;
   rows: unknown[];
 };
 
-// The schema is passed in rather than read from configuration, because these are raw queries
-// and a raw query resolves an unqualified table name through search_path. Prisma's model
-// operations are schema-scoped and raw ones are not, so without qualifying every table this
-// reads whichever schema the connection happens to point at - which on a deployment with a
-// non-default schema means reconciling the wrong database and reporting it clean.
 export async function runReconciliation(
   client: Prisma.TransactionClient,
   schema: string,
@@ -93,9 +80,6 @@ export async function runReconciliation(
           `,
         });
 
-        // 5. No customer wallet is negative. The database already refuses this through
-        //    wallets_balance_non_negative; checking anyway costs nothing and would catch a
-        //    constraint that had been dropped.
         results.push({
           name: "no customer wallet is negative",
           detail: "a customer balance below zero",
@@ -118,18 +102,7 @@ export async function runReconciliation(
           `,
         });
 
-        // 7. The answer a retry would replay still describes the transfer it points at.
-        //
-        //    A succeeded idempotency record stores the exact response body the first attempt
-        //    returned, and a repeat of that key replays it verbatim without reading the
-        //    transfer again. That makes the stored body a second, independent copy of the
-        //    amount - and until this check existed, nothing compared the two. A record whose
-        //    body claimed a different figure than the transfer it references passed every
-        //    other check here, because the ledger itself was perfectly consistent: the money
-        //    moved correctly and only the receipt lied.
-        //
-        //    It also catches a succeeded record whose transfer has gone, and one that claims
-        //    success without naming a transfer at all.
+        // Check that saved retry responses still match their transfers.
         results.push({
           name: "stored idempotent answers match their transfers",
           detail: "a succeeded key whose saved response disagrees with the transfer it replays",

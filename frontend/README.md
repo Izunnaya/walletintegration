@@ -1,104 +1,54 @@
 # Wallet frontend
 
-React and Vite UI for the wallet API in `../server`. The Restaurant frontend supplied the structure: thin screen components, resource API hooks, workflow form folders, React Hook Form and Zod. Authentication follows this backend's bearer-token contract.
+I built the wallet UI with React and Vite, following the structure from my
+Restaurant project: screens, workflow forms and resource API hooks. The screens
+match the API's account, wallet, transfer and admin operations.
 
-## Run locally
+I keep server data in TanStack Query, fields in React Hook Form and calculations
+in pure helpers. Transfers have an explicit recovery workflow because losing a
+response does not establish that the payment failed.
+
+Live app: [walletintegration.vercel.app](https://walletintegration.vercel.app/).
+
+## Start
 
 ```sh
 npm ci
 # Copy .env.example to .env.local and set VITE_API_BASE_URL.
 npm run dev
-npm run typecheck
-npm run build
 ```
 
-Open http://localhost:3001. `VITE_API_BASE_URL` defaults to http://localhost:3000 and is public build configuration; never put secrets in it. To use the deployed API, set it to `https://walletintegration-6t6r.onrender.com` and restart Vite. The API must allow the frontend origin through CORS. A free Render instance can take time to wake; requests time out after 65 seconds and show a slow-request notice.
+Open http://localhost:3001. The default API is http://localhost:3000. Restart Vite
+after changing the URL and allow the frontend origin in backend CORS.
 
 ## Deploy
 
-Live at https://walletintegration.vercel.app, deployed by Vercel from this directory with the root
-directory set to `frontend`. Vercel detects Vite and runs `npm run build`, publishing `dist`. That
-script is `tsc -b && vite build`, so a type error fails the deploy rather than shipping.
+I deploy the frontend on Vercel. Select `frontend` as the root directory, use the
+Vite framework preset, `npm run build` as the build command and `dist` as output.
+Set `VITE_API_BASE_URL=https://walletintegration-6t6r.onrender.com` in Vercel before
+building. It is public configuration and is included in the browser bundle.
 
-There is no deploy config in this repository — it lives in Vercel's project settings, which is
-worth knowing before looking for a file that is not here. Two pieces of it matter:
+The deployed frontend origin is `https://walletintegration.vercel.app`. Add it to
+the Render API's `CORS_ORIGINS`. `vercel.json` supplies the application-route fallback
+so direct visits and refreshes load the app.
+The [deployment guide](../docs/deployment.md) covers route refreshes and verification.
 
-`VITE_API_BASE_URL` is a Vercel environment variable. It is not a secret: Vite inlines every
-`VITE_` variable into the bundle at build time, so it is readable by anyone who opens the deployed
-JavaScript. It does mean pointing the UI at a different API is a rebuild, not a restart.
-
-The API's `CORS_ORIGINS` has to name this site's origin, or the page loads, the API answers
-correctly, and the browser throws every response away. Preview deployments get their own Vercel
-hostnames and so are not on that allowlist; run a branch locally against the API instead.
-Refreshing on a route like `/transfer` works because Vercel serves `index.html` for anything that
-is not a real file — host behaviour, not something this app configures.
-[docs/deployment.md](../docs/deployment.md) has the whole sequence.
-
-## Screens and backend coverage
-
-| Screen | API |
-| --- | --- |
-| Create account | POST /auth/register; creates a customer and wallet, then asks them to sign in |
-| Sign in | POST /auth/login |
-| Overview | GET /wallets/me and recent GET /transfers |
-| Send money | POST /transfers with Idempotency-Key |
-| Transactions | GET /transfers using the server's cursor |
-| Transfer receipt | GET /transfers/:id |
-| Admin account access | POST /admin/users/:id/block or /unblock with a reason |
-| Admin audit log | GET /admin/audit (latest 50 entries) |
-| Service status footer | GET /health/live and /health/ready |
-
-There is no user directory, recipient lookup, profile editor, deposits, transfer notes, analytics or blacklist editor in the current API. The UI asks for the recipient's wallet ID and the administrator's target user ID. Reconciliation, seeding and admin creation remain server CLI operations. User ID and wallet ID are different identifiers.
-
-## Structure and responsibilities
-
-```text
-src/
-  api/                         Shared HTTP client, Zod response contracts, resource hooks
-  auth/AuthProvider.tsx        Session lifecycle and cache cleanup
-  pages/                       Screen composition and workflow actions
-  forms/<workflow>-form/       Form schema, fields and workflow-specific logic
-    transfer-form/attempt.ts   Pure intent helpers and tab-storage boundary
-    transfer-form/useTransferAttempt.ts  Explicit transfer recovery workflow
-  layouts/                     Public authentication shell and signed-in shell
-  components/                  Reused presentation and loading states
-    ui/                        Existing shadcn primitives
-  hooks/useRetryAfter.ts       Shared nonfinancial request cooldown
-  lib/                         Pure money/validation helpers, motion settings, notifications
-```
-
-`apiRequest` handles JSON, bearer headers, cancellation, timeouts, response validation and server errors. Resource hooks own TanStack Query caching and invalidation. Pages do not fetch directly or copy server records into local state. Forms validate with React Hook Form and Zod; the backend still enforces every rule. Query keys include the current user, and changing sessions cancels reads and clears the cache.
-
-Pure functions handle money, IDs, validation and intent comparison. Storage, timers, HTTP and React state remain explicit effects. There is no generic repository or workflow framework. Installed framer-motion, react-loading-skeleton, sonner and LoadingButton provide transitions, placeholders and notifications. Motion respects the system's reduced-motion preference. A captured route outlet prevents an exiting transition from remounting the next screen's form.
-
-## Authentication and errors
-
-The API returns a JWT in JSON and has no cookie or refresh endpoint. The session is kept in per-tab sessionStorage, survives reload, and is removed at sign-out or a protected 401. Passwords are never stored. If storage is blocked, login works in memory. Session storage is accessible to JavaScript and is not protection against XSS; an HttpOnly-cookie session would require a backend change. Client role guards control navigation; the backend authorizes requests.
-
-Errors display the server's message, field details and Retry-After where supplied. Request IDs stay on the API error for diagnostics and are not rendered in alerts or toasts. Authentication and admin writes have no automatic retries. Reads retry a server failure once, and do not automatically retry 401 or 429 responses. Public account forms and admin confirmation honor Retry-After with a disabled countdown. Browser access to response headers depends on the API exposing them through CORS.
-
-## Money and transfer recovery
-
-Money and database IDs stay strings across JSON, and money arithmetic uses bigint. Form amounts in naira convert exactly to kobo. The form mirrors the backend's NGN 10 million transfer ceiling, positive BIGINT identifiers and UTF-8 password length limit.
-
-Reviewing a transfer creates a UUID key. Before sending, its exact source, destination, amount and key are saved under `wallet.transfer:<userId>` in sessionStorage. A network error, server error, invalid success response or expired session leaves that intent unresolved. The user checks it by resending the same key and body; the UI prevents editing it into a different payment. Mutation auto-retries are disabled. A known business rejection permits a new intent and a new key. A 429 keeps the existing key and honors Retry-After. Successful transfers clear the attempt and invalidate wallet and history reads.
-
-Sending is refused when the attempt cannot be saved. Recovery covers reloads, navigation and re-authentication in the same tab. Closing the tab or clearing browser storage loses that recovery record; history and the server's idempotency ledger remain authoritative. Client state does not provide server concurrency or accounting guarantees.
-
-## Verification
+## Check
 
 ```sh
+npm run typecheck
+npm run build
 npx playwright install chromium
 npm test
-# On Windows, use installed Edge instead if preferred:
-# $env:PLAYWRIGHT_CHANNEL='msedge'; npm test
 ```
 
-The 17 checks cover exact large amounts/IDs, password bytes, login/registration, role guards, cursor pagination, receipts, clear errors without internal request IDs, rate limiting, interrupted-transfer recovery, fresh keys after rejection, session expiry, account isolation, admin audit actions and mobile navigation/theme. Browser requests are intercepted with backend-shaped fixtures: these tests verify frontend behavior, not production concurrency or database correctness. Tests use a separate Vite instance on port 3012 and override the API URL, so they never send money to production.
+On Windows, set `$env:PLAYWRIGHT_CHANNEL = 'msedge'` to use installed Edge.
+Tests use a separate server and intercepted API responses; they do not send money
+to the deployed service.
 
-Production smoke verification separately used an existing demo account to read its wallet and display the transfer form. No money or admin changes were submitted.
+Read the [frontend guide](../docs/frontend.md) for the folder structure, screens,
+API integration, sessions, transfer recovery, loading states and deployment.
+The [API contract](../docs/api.md) explains the backend endpoints.
 
-
-## Public wallet identifiers
-
-Wallet display, copy, recipient entry, confirmation and history use persisted `wlt_` identifiers. The backend retains numeric primary keys for ledger relationships and accepts numeric transfer inputs for compatibility. Public response fields are optional during rollout, so the UI can still read the previous API and replay older saved responses. Existing numeric transfer attempts keep their original body and key. Deploy the backend migration and API to activate public IDs; frontend formatting alone does not create them.
+My [frontend decisions](../docs/frontend-decisions.md) cover the reasons and
+tradeoffs behind this structure, sessions, validation and payment recovery.

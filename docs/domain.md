@@ -1,257 +1,85 @@
-# The domain
+# Money and account rules
 
-What a user, wallet, transfer and ledger entry are, and the rules on money. The
-build spec is the source; this is the working version a developer reads before
-touching a figure.
-
----
-
-## Glossary
-
-| Term | What it means here |
-| --- | --- |
-| **Invariant** | A rule that holds no matter what fails. The nine below are the ones the whole design exists to keep |
-| **Minor units (kobo)** | Money as a whole number of kobo. `"150000"` is NGN 1,500 |
-| **Wallet** | One per user, one currency (NGN), with a balance in kobo |
-| **System wallet** | The single wallet allowed to go negative. It funds demo balances and nothing can reach it |
-| **Transfer** | A movement of money that happened. Only successes are stored |
-| **Ledger entry** | One signed, immutable line belonging to a transfer and a wallet. A debit and a credit per transfer |
-| **Balance vs ledger** | The balance is the running total; the ledger is the proof behind it |
-| **Idempotency key** | A client-supplied ID naming one intended transfer, so a repeat is recognised rather than re-executed |
-| **Fingerprint** | A hash of the normalised transfer details stored with the key, so the same key with different details is caught |
-| **Reconciliation** | Checking that every balance equals the sum of its ledger entries |
-| **Row lock** | `SELECT ... FOR UPDATE`. While one transaction holds a row, others wait |
-| **Fail closed** | If a safety check cannot run, treat it as a refusal |
-
----
-
-## The invariants
-
-1. Customer wallet balances never go negative.
-2. A successful transfer debits and credits exactly the same amount in the same
-   currency.
-3. The transfer, both ledger entries, both balance updates and the idempotency
-   result commit together or not at all.
-4. Retrying the same operation cannot move money twice.
-5. A user can only transfer from a wallet they own.
-6. Users can only view wallets and transfers they are authorised to see.
-7. Account restrictions are checked under database locks, inside the transfer
-   transaction.
-8. Every balance change has matching immutable ledger entries.
-9. Financial records are never deleted or rewritten. Corrections are new
-   compensating entries.
-10. A timeout does not mean a transfer failed.
-
-Every design decision traces back to one of these. When a choice looks
-over-careful, the question to ask is which invariant it protects.
-
----
+I model each customer with one NGN wallet. Registration creates the account and an empty wallet
+in one transaction. Email addresses are trimmed and lowercased before uniqueness,
+blacklist and login checks. A blacklisted address cannot register.
 
 ## Money
 
-Amounts are whole kobo, parsed and calculated as `bigint`, stored as `BIGINT`,
-and serialised to JSON as strings. No amount passes through a JavaScript
-`number` — see [ADR 1](decisions.md).
+Amounts are whole kobo, stored and calculated as integers. JSON uses strings:
+`"150000"` is NGN 1,500. The maximum transfer is NGN 10 million. Customer balances
+cannot go negative. The receiving balance must fit PostgreSQL's `BIGINT` range.
 
-A request supplies `amountMinor` as a positive integer string. Rejected on sight:
-zero, negatives, decimals, anything non-numeric, anything above the maximum
-(1,000,000,000 kobo, a deliberate ceiling rather than a product requirement), a currency mismatch, and a transfer where source and destination
-are the same wallet.
+The demo seed uses one system wallet to fund customers. Its negative balance equals
+the money customers hold. The normal API cannot transfer to or from that wallet.
 
-Naming carries the unit. `amountMinor`, `senderBalanceMinor` — never `amount` or
-`balance` on their own, so a mixed-unit mistake is visible where it is written.
+## Transfer flow
 
-`server/src/domain/money.ts` defines the reusable Zod amount and currency schemas.
-The amount schema trims whitespace, validates digits, converts directly to
-`bigint`, and checks the positive amount and existing transfer limit. The request
-schema composes these schemas directly. Callers use Zod's `safeParse` result
-for validation failures and the parsed `bigint` on success.
-See [Zod's schema documentation](https://zod.dev/api) for transforms and pipes.
+For a transfer of NGN 100, the source loses `10000` kobo and the destination gains
+`10000`. The ledger records both sides. None of those writes should exist without
+the others, so I perform the following steps in one transaction.
 
-Transfer policy remains a sequence of explicit decisions using supplied state.
-Ownership is checked before restrictions or funds, and the calling transaction
-must obtain that state under row locks. Schema validation does not replace those
-locks or business decisions.
 
----
+1. Resolve wallet IDs and claim the user's idempotency key.
+2. If the key exists, compare the details and replay the saved answer or return `409`.
+3. Lock users, then wallets, in ascending ID order.
+4. Check ownership, restrictions, currency, funds and the receiving balance limit.
+5. Save a business rejection without moving money, or write the transfer, both balance
+   changes and its debit and credit.
+6. Save the response with the same transaction, commit, then respond.
 
-## Wallets and accounts
+Two requests can target the same balance. I take the locks before reading that
+balance so a waiting request sees the first transfer's committed result rather
+than both spending the same starting funds.
 
-Each user has exactly one NGN wallet, created with the user and starting at zero.
-There is no account deletion.
+One transaction contains the whole financial change. A thrown error rolls it back.
+Deadlocks and serialization failures get bounded retries because PostgreSQL confirms
+rollback. An uncertain outcome must be checked with the same request and key.
 
-A user can be stopped two ways, and both stop them **sending and receiving**:
-
-- **Blocked** — set by an admin, reversible by an admin.
-- **Blacklisted** — matched by email against `blacklist_entries`.
-  Checked at registration, so a blacklisted email cannot register at all, and
-  again inside every transfer transaction for both parties.
-
-Unblocking does not lift a blacklist. They are separate restrictions and either
-one is enough to refuse.
-
-The blacklist check fails closed. If it cannot run, it counts as a refusal, never
-a pass.
-
----
-
-## The system wallet
-
-One wallet carries `is_system = TRUE` and is the only one the schema permits to
-go negative:
-
-```sql
-is_system BOOLEAN NOT NULL DEFAULT FALSE,
-balance   BIGINT  NOT NULL DEFAULT 0,
-CHECK (balance >= 0 OR is_system = TRUE)
-```
-
-It exists so demo balances arrive honestly: the seed moves money out of it
-through real transfers with real ledger entries, rather than writing balances
-into customer wallets directly. No customer balance exists without history behind
-it.
-
-It is fenced on every side. No endpoint reads `is_system` from a request, none can
-create or change it, registration always creates customer wallets, and a customer
-transfer naming it on either side is rejected. Only the seed uses it. See
-([ADR 9](decisions.md)).
-
----
-
-## Transfers
-
-A transfer moves an amount from one wallet to another inside one transaction. The
-order inside that transaction is fixed:
-
-1. Claim the idempotency key.
-2. Lock the user rows, in sorted id order.
-3. Lock the wallet rows, in sorted id order.
-4. Validate: ownership, blocked, blacklisted, wallet exists, currency matches,
-   neither side is the system wallet, funds sufficient.
-5. On a business rejection, store it on the idempotency record and commit. No
-   money moves.
-6. Otherwise insert the transfer and its two ledger entries.
-7. Update both balances.
-8. Store the success on the idempotency record.
-9. Commit, then respond.
-
-Locks before reads, always. A balance read before a lock is a balance that may
-already have changed. Users before wallets, and each in sorted id order, so two
-transfers in opposite directions acquire the same locks consistently — see
-[ADR 2 and ADR 3](decisions.md).
-
-**Only successful transfers are stored.** A rejection lives on the idempotency
-record and in the logs ([ADR 8](decisions.md)).
-
----
-
-## Ledger entries
-
-Every transfer produces exactly two: a debit on the source wallet and a credit on
-the destination, equal in size and opposite in sign, in the same currency. The
-unique constraint on `(transfer_id, entry_type)` makes a third entry impossible.
-
-Entries are never updated or deleted. A correction is a new compensating pair,
-so the history records that something was corrected rather than hiding it.
-
-The balance column exists for fast reads; the ledger is what proves it. If they
-ever disagree, the ledger is right.
-
----
-
-## Idempotency
-
-Every `POST /transfers` carries an `Idempotency-Key` header. The key is unique
-per **authenticated user + operation + key**, so one client's keys cannot collide
-with another's.
-
-Stored with it is a fingerprint of the *normalised* details — source wallet,
-destination wallet, currency, amount — not the raw JSON, so the same intent
-formatted differently is still the same intent. This is request-content fingerprinting,
-not browser or device tracking. The helper is `fingerprintTransfer`. See
-[ADR 7](decisions.md) for why the fingerprint exists and what a mismatch means.
+## Retries
 
 | Situation | Result |
 | --- | --- |
-| Same key, same details, earlier success | The stored success, replayed |
-| Same key, same details, earlier rejection | The stored rejection, replayed |
-| Same key, different details | `409`, nothing moves |
-| Two concurrent requests, same key | The unique index coordinates them; one executes |
-| The transaction rolled back | No key, no movement. Retrying with the same key runs it |
-| The outcome is unknown to the client | Retry with the same key to find out |
+| Same user, key and details | Replay the saved answer |
+| Same key with different details | `409`; no new movement |
+| Concurrent calls using one key | One executes; others wait or retry |
+| Known rejection, such as insufficient funds | Save and replay that rejection |
+| Transaction rolled back | No movement or saved result from that attempt |
+| Response lost or outcome uncertain | Retry the same details and key |
 
-A rejection is committed as the key's answer ([ADR 5](decisions.md)). Trying
-again after a top-up is a new intent and needs a new key.
+If a transfer times out after commit, retrying its original key returns the saved
+receipt. If it rolled back, the retry can run it. That is why the same recovery
+instruction works without guessing whether money moved.
 
-The record is written inside the transfer transaction, so nothing half-finished
-is ever visible ([ADR 4](decisions.md)).
+A new key means a new payment. Idempotency does not stop a caller intentionally
+sending the same amount twice with two different keys.
 
----
+## Restrictions
 
-## Known outcome versus unknown outcome
+Blocked or blacklisted users cannot send or receive. Unblocking does not remove a
+blacklist entry. Transfers check these rules while holding user locks, so blocking
+and transferring cannot change the same account at the same time.
 
-This is the distinction the whole failure design rests on. The service never
-reports a failure when all it knows is that it lost the answer.
+I require admins to give a reason to block or unblock someone. The request locks the admin
+and target account and checks current admin access before saving anything. The
+change and audit entry commit together. Repeating an unchanged restriction writes
+no extra audit entry.
 
-| Failure | What is true | What the client does |
-| --- | --- | --- |
-| Invalid input, unauthorised | Nothing happened | Fix and resend |
-| Insufficient funds, restricted account | Rejected, committed as the key's result | New intent, new key |
-| Crash before commit | Rolled back | Retry with the same key |
-| Crash after commit, before the response | The transfer happened | Retry with the same key; gets the original result |
-| Connection lost during commit | Unknown | Retry with the same key |
-| Duplicate waiting on a held key | Pending | Retryable response; reuse the key |
-| Deadlock or serialisation error | Rolled back | Bounded retry of the whole transaction, up to 3 times |
-| Database unreachable before any work | Nothing happened | `503`, retry |
+The blacklist currently has no management endpoint. Direct database edits are an
+operational action; they do not use the account-locking workflow.
 
-"Retry with the same key" is the single instruction a client needs for every
-uncertain case, and it is safe in all of them.
+## History and reconciliation
 
----
+A transfer has exactly one debit and one credit of equal size. Database triggers
+reject updates and deletes on transfers and ledger entries. Corrections are new
+entries. Use a restricted application database role so it cannot disable those
+protections or truncate tables.
 
-## Three kinds of record
+`npm run reconcile` checks balances against ledger totals, debit/credit pairs,
+amounts, wallet and currency assignments, negative customer balances, the system
+total and saved transfer amounts and IDs. All checks share one read-only snapshot.
 
-Each answers a different question, and mixing them makes all three worse.
-
-| Record | Answers | Where it lives |
-| --- | --- | --- |
-| Financial ledger | Where did the money move? | `ledger_entries`, immutable |
-| Operational log | Why did this request fail? | `console.error` with the request ID |
-| Admin audit trail | Who changed a restriction, when, and why? | `admin_audit_entries`, insert only |
-
-No password and no token is ever logged.
-
----
-
-## Reconciliation
-
-`npm run reconcile` checks that the books are internally consistent:
-
-- Every wallet balance equals the sum of its signed ledger entries.
-- Every transfer has exactly one debit and one credit.
-- Entries match their transfer's wallets, currency and amount, and sum to zero.
-- No customer wallet is negative.
-- Seed funding balances across the system wallet and the customers.
-
-All of it runs in one read-only `REPEATABLE READ` transaction, so concurrent
-transfers cannot make two separate checks disagree about a moment in time. The
-transfer's own isolation level is unaffected.
-
-**A balanced ledger does not prove there are no duplicates.** A transfer executed
-twice still balances. Idempotency proves each intent ran once; reconciliation
-proves the arithmetic holds. Both are needed and neither substitutes.
-
----
-
-## Boundaries of this model
-
-The maximum transfer amount, the rate limit numbers and the blacklist's matching
-identifier are all settled and recorded in [decisions](decisions.md). Registration
-refuses unknown fields rather than ignoring them, because the schemas are strict.
-
-Administering the blacklist, reversals, and multiple live currencies are out of scope.
-What the model does not cover and what the tests do not yet prove are both listed in
-[known limitations](known-limitations.md).
-
-For the locking, timeout budgets and replay behaviour behind the transfer, see the
-transfer section of [architecture.md](architecture.md).
+Reconciliation checks consistency. It cannot prove that a privileged database owner
+never rewrote history, or that two different keys were not used for the same intended
+payment. The reasons behind the design are in [server-decisions.md](server-decisions.md),
+and the remaining boundaries are in [known-limitations.md](known-limitations.md).

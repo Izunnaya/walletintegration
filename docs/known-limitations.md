@@ -1,85 +1,71 @@
-# Known limitations
+# Current limits
 
-What this service does not do, or does not yet prove. Recorded so a reader can tell a known
-boundary from an oversight, and so nobody has to rediscover one of these the hard way.
+I keep these boundaries explicit so the guarantees in the decision guides are not
+read as promises the current implementation cannot make.
 
-Each entry says what the limitation is, what it affects, and what closing it would take.
+## Proxy configuration
 
-## Proxy attribution on the deployed service
+`TRUST_PROXY_HOPS` must match the observed ingress chain. Its default, `0`, ignores
+forwarded headers. Behind a proxy, that can put many people in one IP rate-limit
+bucket, including login requests. I need to verify the deployed ingress chain from logs before changing it.
 
-**IP-based rate limits do not identify individual callers in production.**
+## Scaling and load
 
-Express counts `trust proxy` hops from the right, so the value has to match the number of
-proxies actually in front of the service. `TRUST_PROXY_HOPS` defaults to `0`, which trusts no
-forwarded header and makes `req.ip` the socket peer — on Render, that is the platform's edge
-address rather than the caller's. Every caller therefore shares a bucket per edge address.
+Rate-limit counters live in one process and reset on restart. Use a shared store
+before adding replicas. Account ceilings can also be exhausted by a distributed
+attacker; they are not a complete abuse-prevention system.
 
-- **Not a spoofing risk.** At `0` hops, a forged `X-Forwarded-For` is ignored entirely. A
-  caller cannot mint themselves a fresh allowance. This is verified by a test that sends 21
-  requests with rotating forwarded addresses and expects them to share one bucket.
-- **What is actually affected** is availability and granularity: one noisy client can consume
-  the per-IP allowance that others would have used.
-- **Login is still protected**, because the per-account limits are keyed on the email address
-  rather than the IP, and are unaffected by hop count.
+My concurrency tests exercise simultaneous transfers, duplicate keys, opposite
+directions, restrictions, failures and retries. Passing those checks establishes
+the tested accounting behavior; it does not establish sustained throughput or p99
+latency. I still need staging measurements with the intended instance size,
+database region and connection limits.
 
-**To close it:** read the real forwarded chain from the ingress logs — the request log records
-`ip`, `remoteAddress` and the raw `forwardedFor` on every line for exactly this purpose — then
-set `TRUST_PROXY_HOPS` to the observed count and pin it with a test. The number is
-deliberately not guessed: too low keys everyone to the proxy, and `true` would take the
-leftmost entry, which the caller controls.
+History uses bounded cursor pagination. Larger datasets still need query-plan and
+index measurements; a small test database does not prove performance at scale.
 
-## Rate limit counters are per process
+## Database access
 
-The limiter store is in memory. That is correct for a single instance and wrong for more than
-one: each process would keep its own counts, so N instances would allow N times the limit, and
-a restart forgets everything.
+Triggers reject updates and deletes on financial history. They do not prevent a
+database owner from disabling them, truncating tables or changing the schema.
+Use a separate migration role and a restricted application role. Keep backups.
+The migration adds triggers; hosted role permissions remain a deployment responsibility.
 
-**To close it:** a shared store (Redis or PostgreSQL). Not needed while the service runs as a
-single web service, and the trade-off is recorded rather than hidden.
+Reconciliation checks consistency, not independent evidence of the original history.
+Two transfers under different keys may both balance correctly. Only replaying the
+original key prevents a retry from becoming a second payment.
 
-## Immutability of committed financial rows is documented, not enforced
+## Sessions and account restrictions
 
-The contributing guide states that transfers and ledger entries are never updated or deleted.
-Nothing in the database enforces it — there is no trigger and no revoked privilege — so a
-process with write access can rewrite history.
+A blocked user cannot log in or transfer. An already-issued token can still read
+that user's wallet and history until it expires. Password changes do not revoke
+existing tokens. Tokens last one hour; immediate session revocation needs a backend
+session or token-version design.
 
-Reconciliation detects inconsistency, not revision. Damage that keeps every invariant intact
-is reported clean: an amount rewritten along with its ledger entries and both balances, a
-transfer reversed in direction, or a transfer deleted with the balances unwound. These cases
-are covered by tests that assert they pass, so the boundary is explicit.
+The browser keeps tokens and unresolved transfers in tab storage. JavaScript can
+read that storage, and closing the tab loses local recovery data. The backend
+history and idempotency records remain the source of truth.
 
-**To close it:** `REVOKE UPDATE, DELETE` on the financial tables from the application role, or
-a trigger that refuses them. Either makes the guarantee structural instead of procedural.
+## Blacklist and demo data
 
-## Reconciliation proves consistency, not uniqueness
+The blacklist is checked at registration and transfers, but there is no endpoint to
+manage it. Direct database blacklist edits do not share the account locks used by
+block/unblock. A future blacklist write path must coordinate those locks.
 
-The checks confirm that balances match their ledger entries, that every transfer has exactly
-one debit and one credit summing to zero, that entries sit on the right wallets, that no
-customer wallet is negative, that the system sums to zero, and that a stored idempotent answer
-still matches the transfer it would replay.
+The seed creates public demo credentials and funding. Those accounts are for the
+project demonstration, not real funds. Idempotency records currently have no expiry;
+removing them would allow an old key to execute again.
 
-They cannot prove a transfer did not run twice. A duplicated transfer balances perfectly: two
-transfers, four entries, every sum correct. Idempotency prevents that; reconciliation does not
-check it.
+## Dependency checks
 
-## What the tests do not establish
+The frontend's
+shadcn development CLI has a low-severity deepmerge advisory, also reported through
+its registry dependency. It is not shipped in the browser bundle. I have kept the CLI version rather than applying a major downgrade as an automated
+fix; it needs a compatible dependency update.
 
-- **Crash recovery.** Fault injection proves an application exception rolls back. It does not
-  prove behaviour when the process dies mid-commit, or when the network drops during `COMMIT`.
-- **Multi-instance behaviour.** Everything is verified against one process.
-- **Sustained throughput.** The latency figures in the production audit include the measuring
-  client's own network and say nothing about p99 under arbitrary load.
-- **Deployed proxy attribution.** Covered above; needs the live ingress chain.
+## Test boundaries
 
-## Deliberately out of scope
-
-- **Admin blacklist endpoints.** The blacklist is seeded and enforced at registration. There is
-  no endpoint to manage it.
-- **Reversals and refunds.** A transfer is final. Correcting one means a new transfer in the
-  opposite direction.
-- **Multiple currencies.** The schema carries a currency column and the service refuses a
-  mismatch, but every wallet is NGN.
-- **A blocked customer's read access.** `POST /transfers` re-reads the blocked flag under the
-  row lock and refuses, and login refuses a blocked account. Existing tokens can still read
-  their **own** wallet and history until they expire. Closing it means a database read on every
-  authenticated read request, which has not been judged worth the cost.
+Fault injection proves rollback and safe retries for the tested cases. It does not
+cover every process crash or network failure during commit. Browser tests intercept
+API requests; they do not verify the deployed backend. Local PostgreSQL tests do not substitute for verifying the deployed API and its
+configuration.

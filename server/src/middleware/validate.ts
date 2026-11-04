@@ -6,11 +6,7 @@ import { adminUserQuerySchema } from "../domain/adminUserQuery.ts";
 import { transferHistoryQuerySchema } from "../domain/transferHistoryQuery.ts";
 import { restrictionRequestSchema } from "../domain/restrictionRequest.ts";
 
-// Where a malformed request is refused, before any financial work starts.
-//
-// Business rules are deliberately not checked here. Whether a wallet can afford a transfer
-// is decided under a row lock inside the transaction, because a balance read outside one
-// is already stale by the time it is used.
+// Validate shape here; check balances and restrictions inside the locked transaction.
 
 const validateBody = (schema: ZodType) => (req: Request, res: Response, next: NextFunction) => {
   const result = schema.safeParse(req.body);
@@ -21,8 +17,6 @@ const validateBody = (schema: ZodType) => (req: Request, res: Response, next: Ne
     return;
   }
 
-  // status().json() once. sendStatus() would send the body itself, and a .json() on top
-  // of it throws.
   res.status(400).json({
     error: {
       code: "VALIDATION_FAILED",

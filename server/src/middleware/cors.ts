@@ -1,24 +1,6 @@
 import cors from "cors";
 import type { CorsOptions } from "cors";
 
-// Cross-origin access for the browser client.
-//
-// Two details here are the ones that actually break a browser client, and neither is
-// obvious from a working curl:
-//
-// allowedHeaders must name Idempotency-Key. It is a custom request header, so the browser
-// sends a preflight OPTIONS first and refuses the real request unless the server lists it.
-// Without this every transfer from the UI fails before it reaches us, while curl works
-// perfectly — because curl sends no preflight.
-//
-// exposedHeaders must name X-Request-Id. A browser hides every response header except a
-// short safelist from JavaScript, so `response.headers.get("X-Request-Id")` returns null
-// unless the server says it may be read. That header is the whole point of the error
-// contract: it is what a user quotes when a transfer fails.
-
-// An allowlist, from configuration. Not a wildcard: credentials and `*` are mutually
-// exclusive in the spec, and a wallet API should not be callable from any page on the
-// internet with the caller's token attached.
 function allowedOrigins(): string[] {
   const configured = process.env.CORS_ORIGINS;
 
@@ -72,9 +54,6 @@ const options: CorsOptions = {
     "RateLimit-Policy",
   ],
 
-  // The token is sent in a header, not a cookie, so credentials are not needed. Leaving it
-  // off keeps `*` available if the allowlist is ever widened, and means a stray cookie can
-  // never be used as an ambient credential.
   credentials: false,
 
   // Cache the preflight for a day, so a browser is not asking on every transfer.

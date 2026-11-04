@@ -4,18 +4,6 @@ import { apiPrisma, apiSchema, prepareApiDatabase, closeApiDatabase, fundWallet 
 import { runReconciliation } from "../src/models/reconciliation.ts";
 import type { Check } from "../src/models/reconciliation.ts";
 
-// A reconciliation that cannot fail is worth nothing. Each check here is handed exactly the
-// damage it exists to find, and is expected to find it — then the damage is rolled back.
-//
-// The checks return the rows that are WRONG, so an empty result is a pass. That makes a
-// broken check indistinguishable from a sound database, which is the whole reason these
-// tests inject faults rather than only asserting the happy path. The first version of this
-// file found a real bug exactly that way: the checks read unqualified table names, so they
-// resolved through search_path and reported a different schema clean.
-//
-// The damage is raw SQL for the same reason the checks are: Prisma's model operations are
-// schema-scoped and raw ones are not, so every table is qualified explicitly.
-
 const namespace = Prisma.raw(`"${apiSchema}"`);
 
 let systemWalletId: bigint;
@@ -46,7 +34,12 @@ async function reconcileWithDamage(damage?: Damage) {
   await apiPrisma
     .$transaction(
       async (client) => {
-        if (damage) await damage(client);
+        if (damage) {
+          // Only these fault-injection tests bypass history protection; rollback restores it.
+          await client.$executeRaw`ALTER TABLE ${namespace}.transfers DISABLE TRIGGER transfers_immutable`;
+          await client.$executeRaw`ALTER TABLE ${namespace}.ledger_entries DISABLE TRIGGER ledger_entries_immutable`;
+          await damage(client);
+        }
         checks = await runReconciliation(client, apiSchema);
         throw rollback;
       },
@@ -150,10 +143,6 @@ describe("reconciliation finds the damage each check exists for", () => {
 
   it("sees a negative customer balance once the constraint stops refusing it", async () => {
     const checks = await reconcileWithDamage(async (client) => {
-      // The damage is impossible while wallets_balance_non_negative exists — which is the
-      // point of having it. Dropping it inside a transaction that is rolled back is the only
-      // way to prove the check would catch a negative balance if the constraint were ever
-      // removed. ALTER TABLE is transactional in PostgreSQL, so the constraint comes back.
       await client.$executeRaw`
         ALTER TABLE ${namespace}.wallets DROP CONSTRAINT wallets_balance_non_negative
       `;

@@ -1,10 +1,7 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "../generated/prisma/client.ts";
 
-// transactionOptions is for callers that are far from the database. A batch
-// $transaction([...]) does not accept maxWait per call, so the only place to raise it is
-// here. The application deliberately does not raise it: a transfer that cannot get a
-// connection quickly should fail fast and return 503, not queue for fifteen seconds.
+// Remote test databases may need longer waits; application requests keep bounded waits.
 export function createDatabaseClient(
   connectionString: string,
   clientOptions: { transactionOptions?: { maxWait?: number; timeout?: number } } = {},

@@ -8,12 +8,6 @@ import { pinoHttp } from "pino-http";
 import { loggerOptions, httpLoggerOptions } from "../src/logger.ts";
 import { attachRequestId } from "../src/middleware/requestId.ts";
 
-// These tests run the real options objects - the same redact paths, serializers, genReqId
-// and customLogLevel the service uses - against a logger that writes into an array instead
-// of stdout. Rebuilding the options would test a copy; importing them tests the thing.
-//
-// No database is involved, so this file is fast and runs with the unit tests.
-
 const lines: string[] = [];
 
 const sink = new Writable({
@@ -96,9 +90,6 @@ describe("every line is structured", () => {
 
     expect(requestId).not.toBe("");
 
-    // This is the link that makes the error contract usable. A user reports a failure by
-    // quoting the ID from the response; that ID has to be the one in the log. Letting
-    // pino-http generate its own would produce two unrelated IDs and look fine in tests.
     const line = await waitForLine((entry) => entry.req?.id === requestId);
     expect(line).toBeDefined();
   });
@@ -113,12 +104,6 @@ describe("every line is structured", () => {
 
 describe("the rate limiter is auditable from the log", () => {
   it("records both req.ip and the raw X-Forwarded-For, so a wrong hop count is visible", async () => {
-    // The limiter keys on req.ip. req.ip depends on the "trust proxy" hop count matching the
-    // platform, and when it does not, Express reports the proxy and every caller shares one
-    // bucket while the response counters still look plausible. These two fields side by side
-    // are the only way to see that from a log: when they disagree about who the caller is,
-    // the hop count is wrong. This app sets trust proxy to 1, so with one forwarded entry
-    // req.ip is the caller.
     const response = await fetch(`${baseUrl}/ok`, {
       headers: { "X-Forwarded-For": "203.0.113.9" },
     });
@@ -126,9 +111,6 @@ describe("the rate limiter is auditable from the log", () => {
 
     const line = await waitForLine((entry) => entry.req?.id === requestId);
 
-    // With trust proxy 1 and a single forwarded entry, req.ip is the caller. Add a second
-    // entry - which is what a platform proxy does - and req.ip becomes that proxy instead.
-    // That is the bug this pair of fields exists to expose.
     expect(line?.req).toMatchObject({ forwardedFor: "203.0.113.9", ip: "203.0.113.9" });
     expect(typeof (line?.req as { remoteAddress?: unknown })?.remoteAddress).toBe("string");
   });
@@ -162,9 +144,6 @@ describe("credentials never reach the log", () => {
     const line = await waitForLine((entry) => entry.req?.id === requestId);
     expect(line).toBeDefined();
 
-    // A token in a log aggregator is readable by far more people than can read the database,
-    // and stays valid until it expires. pino-http logs the full header set by default, so
-    // this is a thing we turned off rather than a thing we never turned on.
     expect(JSON.stringify(line)).not.toContain("super-secret-token-value");
   });
 

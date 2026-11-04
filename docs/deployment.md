@@ -1,165 +1,135 @@
 # Deployment
 
-Three providers, one for each thing that has to run. The API is a Node web service on Render,
-built from [`render.yaml`](../render.yaml). The database is Neon — that split is deliberate, see
-**Why Neon rather than Render PostgreSQL** below. The browser client is a static site on Vercel,
-built from `frontend/`.
+I host the API on Render and deploy the Vite frontend separately on Vercel.
+PostgreSQL runs on Neon. The API configuration is in [`render.yaml`](../render.yaml);
+Vercel builds the frontend package from `frontend/`.
 
-- API: https://walletintegration-6t6r.onrender.com
-- UI: https://walletintegration.vercel.app
+The API needs a running process and database credentials. The frontend build produces
+static browser files. The [server](server-decisions.md#20-i-separate-startup-health-and-deployment-configuration)
+and [frontend](frontend-decisions.md#13-i-deploy-the-frontend-as-static-files) decision
+guides explain those responsibilities.
 
-The two deploy independently and neither knows about the other, except for one string: the API's
-`CORS_ORIGINS` has to name the UI's origin. All free tiers.
+Live frontend: [walletintegration.vercel.app](https://walletintegration.vercel.app/).
 
-## The API, once, in the Render dashboard
+Live API: [walletintegration-6t6r.onrender.com](https://walletintegration-6t6r.onrender.com/).
 
-1. **New → Web Service**, connect `Izunnaya/walletintegration`, pick the branch.
-2. Render reads [`render.yaml`](../render.yaml) and fills in the root directory, build command,
-   start command and health check path. Confirm they read:
+## API settings
 
-   | Setting | Value |
-   | --- | --- |
-   | Root directory | `server` |
-   | Build command | `npm ci --include=dev && npm run migrate && npm run build` |
-   | Start command | `npm start` |
-   | Health check path | `/health/ready` |
+Create or connect the API service in Render, using the repository and deployment
+branch. When using a Blueprint, sync `render.yaml`; when setting up manually, use
+the same values:
 
-3. **Set three environment variables.** They are marked `sync: false` in the blueprint, which
-   means Render will not read them from the repository — it asks you, and they are never
-   committed.
+| Setting | Value |
+| --- | --- |
+| Service | `wallet-service`, Node web service |
+| Root directory | `server` |
+| Build | `npm ci --include=dev && npm run migrate && npm run build` |
+| Start | `npm start` |
+| Health check | `/health/ready` |
 
-   | Variable | Where it comes from |
-   | --- | --- |
-   | `DATABASE_URL` | Neon → your project → Connect. Use the **pooled** connection string here |
-   | `JWT_SECRET` | Generate a fresh one. **Do not reuse the local value** |
-   | `SEED_ADMIN_PASSWORD` | Your choice. Shared with reviewers privately, never published |
-   | `CORS_ORIGINS` | Where the browser client is served from, comma-separated. Omit until there is one |
+I install development dependencies during the build because TypeScript and the
+Prisma CLI are build tools. Starting uses the compiled `dist/index.js`. Seeding is
+an explicit operation, separate from startup and deployment.
 
-   Generate the secret with:
+Set these environment variables on the API:
 
-   ```sh
-   node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
-   ```
+| Variable | Purpose |
+| --- | --- |
+| `DATABASE_URL` | Hosted PostgreSQL connection; the app can use the pooled endpoint |
+| `JWT_SECRET` | Random signing secret, at least 32 characters |
+| `SEED_ADMIN_PASSWORD` | Admin credential for initial seeding or deliberate password changes |
+| `CORS_ORIGINS` | Actual frontend origins, separated by commas |
+| `TRUST_PROXY_HOPS` | Proxy count verified from the deployed ingress logs |
+| `LOG_LEVEL` | Normally `info` |
 
-4. **Deploy.** Watch the build log for `prisma migrate deploy` applying `0_init`, then
-   `Server started`.
+Secrets use `sync: false` in the blueprint, so their values stay in the hosting
+environment. `TRUST_PROXY_HOPS` starts at zero until the proxy chain is verified.
+This ignores forwarded headers, but behind a proxy it can group callers into the
+same IP bucket. It should not be changed by guessing.
 
-5. **Seed once, by hand.** Render's shell, or locally with `DATABASE_URL` pointed at the
-   deployed database:
-
-   ```sh
-   npm run seed
-   ```
-
-   It is never run automatically on startup, and running it twice changes nothing.
-
-6. **Set the admin password.** The seed writes it once and never resets it, so a database
-   seeded before `SEED_ADMIN_PASSWORD` existed keeps whatever default it was given. Set it
-   deliberately:
-
-   ```sh
-   SEED_ADMIN_PASSWORD='...' npm run admin:password
-   ```
-
-   The database is Neon rather than Render-internal, so this runs from anywhere with the
-   connection string — there is no need for a shell on the web service, which the free plan
-   does not provide anyway.
-
-## The frontend, once, in the Vercel dashboard
-
-There is no committed config for this one. Vercel reads the repository and its own project
-settings, so unlike the API there is no file here that describes the deploy.
-
-1. **Import the repository** and set **Root directory** to `frontend`. Vercel detects Vite and
-   fills the rest in: `npm run build`, output `dist`. `npm run build` is `tsc -b && vite build`,
-   so a type error fails the deploy rather than shipping a broken bundle.
-
-2. **Set `VITE_API_BASE_URL`** in Project Settings → Environment Variables, to the API's URL with
-   no trailing slash. It is not a secret and does not need to be treated as one: Vite inlines every
-   `VITE_` variable into the bundle at build time, so the value is readable by anyone who opens the
-   deployed JavaScript. It does mean changing which API the UI talks to is a rebuild, not a restart.
-
-3. **Add the UI's origin to the API's `CORS_ORIGINS`** on Render, and redeploy the API:
-
-   ```
-   CORS_ORIGINS=https://walletintegration.vercel.app
-   ```
-
-   Comma-separated if there is more than one, no trailing slash, and the scheme matters — an origin
-   is scheme, host and port, so `http://` will not match `https://`.
-
-   This is the step that is easy to miss, because nothing about it looks like a frontend problem:
-   the UI loads, the API answers correctly, and the browser throws every response away.
-
-**Preview deployments will not reach the API.** Vercel gives every branch and pull request its own
-hostname, and the API matches `CORS_ORIGINS` exactly, so a preview is refused by the browser even
-though production works. That is the allowlist doing its job rather than a fault — a wallet API
-should not answer any origin that asks. To exercise a branch against the live API, run it locally
-with `VITE_API_BASE_URL` pointed at the API, which is already an allowed origin in development.
-
-## Checks that prove it is actually up
+A signing secret can be generated locally with:
 
 ```sh
-curl -i https://<service>.onrender.com/health/live     # 200 {"status":"ok"}
-curl -i https://<service>.onrender.com/health/ready     # 200 {"status":"ready"}
+node -e "console.log(require('crypto').randomBytes(48).toString('hex'))"
 ```
 
-`live` answers while the database is unreachable; `ready` does not. If `ready` returns `503` the
-process is fine and the database is not, which is the distinction the health check exists to make.
+## Frontend settings on Vercel
 
-Then the full path, with the seeded credentials:
+Import the repository in Vercel and select the branch containing the frontend.
+Use these settings:
 
-```sh
-curl -sX POST https://<service>.onrender.com/auth/login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"ada@example.com","password":"demo-password-2026"}'
+| Setting | Value |
+| --- | --- |
+| Framework preset | Vite |
+| Root directory | `frontend` |
+| Build command | `npm run build` |
+| Output directory | `dist` |
+| Environment variable | `VITE_API_BASE_URL=https://walletintegration-6t6r.onrender.com` |
+
+The API URL must be set before the build because Vite includes it in the shipped
+JavaScript. Changing it requires another build. Tokens, passwords and database
+credentials must never be put in a `VITE_` variable.
+
+I run the production build locally before deploying. The live frontend is
+[walletintegration.vercel.app](https://walletintegration.vercel.app/). A successful
+local build does not set Vercel's environment variables; the API URL must also be
+configured for the deployment environment and followed by a new build.
+
+React Router owns paths such as `/transfer` after loading. Direct visits and refreshes
+also need the host to return `index.html`. Vercel's [Vite guide](https://vercel.com/docs/frameworks/frontend/vite)
+covers SPA rewrites. `frontend/vercel.json` supplies the fallback in this project.
+It is separate from whether `npm run build` succeeds.
+
+## Connect the two services
+
+Add the deployed frontend origin, `https://walletintegration.vercel.app`, to the API's
+`CORS_ORIGINS` and redeploy the API. For example:
+
+```text
+CORS_ORIGINS=https://walletintegration.vercel.app
 ```
 
-## Things that will look like bugs and are not
+Use the actual assigned hostname, without a trailing slash. Scheme and port are
+part of an origin. Add local development origins too only if that API should accept
+them, using commas between entries.
 
-**The first request after a pause is slow.** Free web services sleep when idle, and waking takes
-tens of seconds. Say so in the submission rather than letting a reviewer discover it.
+This step is easy to miss because the UI can load and the API can answer while
+the browser refuses to expose the response to the page. CORS controls that browser
+access; it does not replace authentication or wallet ownership checks.
 
-**A reload on `/transfer` works, and it is Vercel doing that.** React Router owns the URL after
-the first load, so a direct visit or a refresh asks the host for a file that does not exist.
-Vercel's Vite preset already serves `index.html` for anything that is not a real file, so there is
-nothing to configure. Worth knowing because it is host behaviour, not application behaviour: on a
-host without that fallback, every URL except `/` answers 404 and it looks like a broken router.
+## Database migrations and demo data
 
-**`index.ts` runs `SELECT 1` before it listens.** That is deliberate: it means the process pays for
-the connection handshake rather than the first user, and the service refuses to start at all if the
-database is unreachable, instead of accepting requests it cannot serve.
+`npm run migrate` applies pending committed SQL before the build starts the new
+application. SQL can change schema or data, so I review migrations and back up
+existing data before release. I do not reset the database to deploy a schema change.
 
-## Why Neon rather than Render PostgreSQL
+The financial-history migration adds triggers rejecting updates and deletes on
+transfers and ledger entries. Deployment should use a separate migration role;
+the application role must not own tables, disable triggers or truncate history.
+It only needs the permissions used by request handling.
 
-A free Render PostgreSQL database becomes inaccessible 30 days after creation, with a 14-day grace
-period that does not keep it working. The build spec is explicit that a README warning does not
-satisfy "a live URL we can hit", so that clock would have to be tracked and the database upgraded
-before submission.
+For the demonstration database, run `npm run seed` explicitly once configuration
+is set. A rerun preserves funding and the existing admin password, but resets public
+demo customer passwords. To change the admin credential, set `SEED_ADMIN_PASSWORD`
+and run `npm run admin:password` from `server/`.
 
-Neon's free tier does not expire that way, and Render connects to it over the network like any other
-host. That removes the deadline entirely — see [ADR 19](decisions.md).
+The [Prisma guide](prisma.md) covers fresh setup, existing-schema adoption and isolated
+verification. Demo accounts are for the project demonstration, not real funds.
 
-One consequence worth knowing: the pooled Neon endpoint is PgBouncer, which rejects startup
-parameters and shares session state between clients. The application uses the pooled endpoint and
-does not set any; the integration tests use the direct endpoint, because they do. See
-`server/tests/database.ts`.
+## Verify a deployment
 
-## Why the API does not rebuild on every commit
+1. Check the build log for successful migrations and compilation, then the startup
+   log for `database_ready` and `server_listening`.
+2. Request `/health/live` and `/health/ready`. Liveness returns `{"status":"ok"}`;
+   readiness returns `{"status":"ready"}` when the database query works.
+3. Load the deployed frontend and sign in using a demo account. Confirm its wallet
+   and history load through the real API origin.
+4. Open `/transfer` and refresh it directly. Do the same for an accessible receipt.
+   These check the static rewrite as well as client navigation.
+5. Check the browser network panel for failed CORS requests or a localhost API URL
+   accidentally included in the production bundle.
 
-`buildFilter` in the blueprint limits the API's builds to commits that touch `server/` or the
-blueprint itself. The frontend shares this repository and deploys to Vercel, so without the filter
-a change to `frontend/` rebuilds the API: it recompiles, it runs `prisma migrate deploy` against
-the production database, and on the free plan it restarts the instance - none of which the API
-asked for. Each of those rebuilds is also a chance to fail, which is how a frontend-only commit
-ends up showing a failed API deploy.
-
-A failed deploy on Render leaves the previous version serving, so the service staying healthy
-while the dashboard shows a failure is the expected behaviour rather than a contradiction.
-
-## Migrations on deploy
-
-`npm run migrate` is `prisma migrate deploy`, and it runs in the build command because the free plan
-has no separate pre-deploy phase. It applies pending migrations and nothing else — it never
-generates, never resets, and never touches data. A migration that fails fails the build, so a broken
-schema change does not reach a running service.
+The frontend and API have separate loading behavior. Static page files can arrive
+while the API is starting. `index.ts` warms its database connection before listening,
+but cannot remove a hosting-platform wake-up delay. The UI shows a slow-request
+notice and preserves an unresolved transfer rather than calling it failed.

@@ -1,16 +1,5 @@
 import "dotenv/config";
 
-// npm run admin:password — set the admin password deliberately.
-//
-// The seed writes the admin password once and never resets it, because a deployed credential
-// should not change because somebody ran the seed again. That rule left a gap: once the row
-// exists there was no way to change the password at all, so a database seeded before
-// SEED_ADMIN_PASSWORD was set kept whatever default it was given — in this project's case,
-// the one published in the README.
-//
-// This is the deliberate path. It is a separate command, it requires the variable to be set,
-// and it refuses to write a weak value. It never runs as part of a deploy.
-
 const ADMIN_EMAIL = "admin@wallet.internal";
 const MINIMUM_LENGTH = 12;
 
@@ -34,7 +23,7 @@ const run = async () => {
   }
 
   if (Buffer.byteLength(password, "utf8") > 72) {
-    // bcrypt ignores anything past 72 bytes, so a longer value would be silently truncated.
+    // bcrypt reads at most 72 UTF-8 bytes; reject longer passwords before hashing.
     console.error("SEED_ADMIN_PASSWORD must be at most 72 UTF-8 bytes, which is all bcrypt reads.");
     process.exitCode = 1;
     return;

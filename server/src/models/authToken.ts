@@ -2,11 +2,7 @@ import jwt from "jsonwebtoken";
 import { z } from "zod";
 import { databaseIdSchema } from "../domain/transferRequest.ts";
 
-// Issuing and reading the JWT.
-//
-// The token says who the caller is. It is never the source of what they may do to a
-// specific wallet: ownership is re-read from the database under a row lock, because a token
-// minted an hour ago cannot know who owns a wallet now.
+// Tokens identify callers. The database decides current ownership and permissions.
 
 // Read through a function so the checked value is typed string rather than string |
 // undefined: TypeScript does not carry the narrowing into the closures below.
@@ -24,9 +20,7 @@ function readSigningSecret(): string {
 
 const secret = readSigningSecret();
 
-// Short-lived, as the spec asks. It limits how long a stolen token is useful; it does not
-// stop someone holding a valid one from using it, which is why the transfer re-checks
-// ownership and restrictions rather than trusting the claims.
+// Tokens expire after one hour; sensitive writes still check current permissions.
 const TOKEN_LIFETIME = "1h";
 
 export type AuthenticatedCaller = {

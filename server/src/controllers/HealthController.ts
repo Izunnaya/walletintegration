@@ -8,10 +8,6 @@ const getLiveness = (req: Request, res: Response) => {
   res.json({ status: "ok" });
 };
 
-// Confirms the database is reachable. This is the one Render's health check points at.
-//
-// Kept separate from liveness so a database outage is not reported as a dead process, and
-// so readiness is never answered before a real query has succeeded.
 const getReadiness = async (req: Request, res: Response) => {
   try {
     await prisma.$queryRaw`SELECT 1`;

@@ -5,8 +5,6 @@ import { authLimiter, loginAccountCeiling, loginAccountLimiter } from "../middle
 
 const router = express.Router();
 
-// Mounted at /auth in index.ts. Both routes are public; the order inside each is
-// validate then controller, because there is nobody to authenticate yet.
 router.post("/register", authLimiter, validateRegisterRequest, AuthController.createUser);
 router.post("/login", authLimiter, validateLoginRequest, loginAccountLimiter, loginAccountCeiling, AuthController.createSession);
 

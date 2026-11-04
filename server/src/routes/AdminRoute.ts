@@ -7,8 +7,6 @@ import { validateAdminUserQuery, validateRestrictionRequest } from "../middlewar
 const router = Router();
 router.use(verifyToken, adminLimiter, requireRole("admin"));
 
-// authenticate, authorise, validate, controller - in that order, every time. Authenticating
-// after authorising would mean deciding a role from a token nobody had verified.
 router.post("/users/:id/block", validateRestrictionRequest, AdminController.blockUser);
 router.post("/users/:id/unblock", validateRestrictionRequest, AdminController.unblockUser);
 router.get("/users", validateAdminUserQuery, AdminController.listUsers);

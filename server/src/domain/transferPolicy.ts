@@ -2,17 +2,6 @@ import { createHash } from "node:crypto";
 import { currencySchema } from "./money.ts";
 import type { TransferRequest } from "./transferRequest.ts";
 
-// Pure decisions about a transfer. Data in, verdict out - no database, no clock, no
-// randomness, so every case below is reachable in a test.
-//
-// The limit of what this file can promise: it decides whether a SUPPLIED balance is
-// enough. It cannot know that the balance is still current. Only a row lock inside the
-// transfer transaction can, which is why the service reads under lock and then calls this.
-
-// The fingerprint is built from the validated request, never from the raw JSON. Two
-// requests that mean the same thing - different key order, a padded amount - must produce
-// the same fingerprint, or a client retrying with its own serialisation would get a 409
-// for an identical intent.
 export function fingerprintTransfer(request: TransferRequest): string {
   const canonical = [
     request.sourceWalletId,

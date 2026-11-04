@@ -24,12 +24,7 @@ export async function lockTransferParties(client: Prisma.TransactionClient, wall
   return { users, wallets };
 }
 
-// The same row lock, on the same table, that lockTransferParties takes. Block and unblock go
-// through this so a restriction change and a transfer involving that user serialise rather
-// than interleave: whichever acquires the lock first decides.
-//
-// FOR NO KEY UPDATE for the same reason as above - FOR UPDATE would conflict with the
-// FOR KEY SHARE that an idempotency record's foreign key takes.
+// Use the same ordered user locks as transfers so restrictions cannot race with money movement.
 export type RestrictedUser = {
   id: bigint;
   email: string;
@@ -38,11 +33,11 @@ export type RestrictedUser = {
   isBlocked: boolean;
 };
 
-export async function lockUserForRestriction(client: Prisma.TransactionClient, userId: bigint) {
+export async function lockUsersForRestriction(client: Prisma.TransactionClient, userIds: bigint[]) {
   const rows = await client.$queryRaw<RestrictedUser[]>`
     SELECT id, email, name, role, is_blocked AS "isBlocked" FROM ${namespace}.users
-    WHERE id = ${userId} FOR NO KEY UPDATE
+    WHERE id IN (${Prisma.join(userIds)}) ORDER BY id FOR NO KEY UPDATE
   `;
 
-  return rows[0] ?? null;
+  return rows;
 }

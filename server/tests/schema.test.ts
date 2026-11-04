@@ -3,23 +3,10 @@ import { afterAll, describe, expect, it } from "vitest";
 import type { PoolClient } from "pg";
 import { pool } from "./database.ts";
 
-// These run against a real PostgreSQL. A mocked database cannot prove a constraint exists,
-// so a test that mocked one would prove nothing at all.
-//
-// Every test runs inside a transaction that is rolled back, so the database is left exactly
-// as it was found and the tests can run in any order, repeatedly.
-//
-// What this file establishes: the invariants hold at the database level. Even with a bug in
-// the application, Postgres refuses to store the forbidden state.
-
 afterAll(async () => {
   await pool.end();
 });
 
-// Most tests only need rows they created themselves, so they run against whatever is
-// committed. The two that assert on wallets_single_system cannot: it is a GLOBAL uniqueness
-// rule, so a test about it has to own the whole table. Those pass { fresh: true }, which
-// empties the tables inside the transaction that is about to be rolled back.
 async function inRolledBackTransaction(
   work: (client: PoolClient) => Promise<void>,
   options: { fresh?: boolean } = {},

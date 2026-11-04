@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-// NGN 10,000,000 per transfer; this is a product limit, not the BIGINT storage limit.
+// Product limit: NGN 10 million per transfer.
 export const MAX_TRANSFER_AMOUNT_MINOR = 1_000_000_000n;
 
 export const currencySchema = z.literal("NGN", { error: "currency must be NGN" });

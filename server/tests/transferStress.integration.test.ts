@@ -7,22 +7,6 @@ import { authPrisma, authSchema, prepareAuthDatabase, closeAuthDatabase } from "
 import { pool } from "./database.ts";
 import { runReconciliation } from "../src/models/reconciliation.ts";
 
-// Load, not shape. transfers.integration.test.ts already proves each outcome once; this file
-// asks whether the same outcomes survive enough simultaneous callers to actually contend for
-// the row locks and the connection pool.
-//
-// The service opens its transfer transaction with maxWait 5s on a pg pool of ten
-// connections, so a couple of dozen requests at one wallet genuinely queues: some callers
-// are told 503 TRANSFER_UNAVAILABLE, which is the documented "could not be confirmed, retry with
-// the same key" answer and not a rejection. Every test here resolves such an answer by
-// retrying the same Idempotency-Key, because that is the contract a real client follows -
-// and doing so is itself the proof that an unconfirmed outcome is never lost or doubled.
-//
-// After every storm the full reconciliation runs, not just a balance comparison: six checks
-// covering balances against the ledger, one debit and one credit per transfer, pairs that
-// cancel, entries on the right wallets, no negative customer balance, and the system summing
-// to zero.
-
 const fault = vi.hoisted(() => {
   process.env.JWT_SECRET = "transfer-stress-test-secret-not-for-production";
   process.env.TRUST_PROXY_HOPS = "0";
@@ -151,9 +135,6 @@ async function send(token: string, request: unknown, key: string): Promise<Answe
   return { status: response.status, body: await response.json(), retryAfter: response.headers.get("Retry-After") };
 }
 
-// 503 means the outcome is unknown, never that the transfer was refused. The only correct
-// response is to repeat the identical request under the identical key until the service can
-// say what happened - which is also what proves the key survives the uncertainty.
 async function settle(token: string, request: unknown, key: string): Promise<Answer> {
   let answer = await send(token, request, key);
   for (let attempt = 0; answer.status === 503 && attempt < 10; attempt++) {
@@ -163,10 +144,6 @@ async function settle(token: string, request: unknown, key: string): Promise<Ans
     answer = await send(token, request, key);
   }
   expect(answer.status, `key ${key} never settled: ${JSON.stringify(answer.body)}`).not.toBe(503);
-  // Named explicitly: a 429 here means the surge plus its own 503 retries outran the sixty
-  // requests a minute the account is allowed, which is a fact about the quota and not about
-  // the ledger. Every surge below is sized to stay inside it; if this ever fires, the
-  // retry amplification has grown, not the correctness.
   expect(answer.status, `key ${key} was rate limited before it could settle`).not.toBe(429);
   return answer;
 }
@@ -196,10 +173,6 @@ describe("the money path under load", () => {
     const destination = await account(0n);
     const key = randomUUID();
 
-    // Twenty-five, not more. The per-account quota is sixty a minute and every 503 retry
-    // spends one of them, so a surge sized at the quota exhausts itself resolving its own
-    // backpressure and proves the limiter rather than the ledger. Measured: forty sends
-    // against this hosted database drew enough 503s to reach 429 part way through.
     const answers = await Promise.all(
       Array.from({ length: 25 }, () => settle(source.token, body(source, destination), key)),
     );
@@ -233,9 +206,6 @@ describe("the money path under load", () => {
   });
 
   it("one shared key mixed with fifteen distinct keys spends the balance to exactly zero", async () => {
-    // Sixteen distinct keys competing for ten affordable transfers, fifteen of the thirty
-    // requests being duplicates of one key. The duplicates must collapse to one transfer
-    // while the distinct keys race each other for the remaining funds.
     const source = await account(1000n);
     const destination = await account(0n);
     const sharedKey = randomUUID();
@@ -285,20 +255,11 @@ describe("the money path under load", () => {
     const second = await account(1000n);
     const before = await deadlockCount();
 
-    // Eight each way, both directions in flight the whole time. Measured on this hosted
-    // database: at twelve each way the contention produced enough 503s that the retries they
-    // demand carried one sender past its sixty-a-minute quota and it was answered 429 mid
-    // recovery. That is a real property of the limiter, reported separately; it is not
-    // something to prove again here, and the lock order is proved at width by the four-wallet
-    // case below rather than by depth on one pair.
     const answers = await Promise.all([
       ...Array.from({ length: 8 }, () => settle(first.token, body(first, second, "100"), randomUUID())),
       ...Array.from({ length: 8 }, () => settle(second.token, body(second, first, "100"), randomUUID())),
     ]);
 
-    // A deadlock is retried internally and would surface as 503 or 500, never as a silent
-    // success - so the statuses alone are evidence, and the counter is the direct proof.
-    // pg_stat_database counts for the whole database, so this reads any deadlock at all.
     expect(await deadlockCount()).toBe(before);
     for (const answer of answers) {
       expect([201, 422]).toContain(answer.status);
@@ -317,9 +278,6 @@ describe("the money path under load", () => {
   });
 
   it("every ordered pair of four wallets sent at once never deadlocks", async () => {
-    // Two wallets can only be locked in two orders. Four wallets give twelve ordered pairs
-    // and four lock positions, so a lock sequence that depended on the request's own
-    // direction rather than on ascending id has somewhere to go wrong.
     const holders = await Promise.all(Array.from({ length: 4 }, () => account(1000n)));
     const pairs = holders.flatMap((from) => holders.filter((to) => to !== from).map((to) => ({ from, to })));
     expect(pairs).toHaveLength(12);
@@ -344,10 +302,6 @@ describe("the money path under load", () => {
   });
 
   it("a failure after both balances have moved writes nothing, not even the key", async () => {
-    // transfers.integration.test.ts injects on the source wallet, which fails on the debit.
-    // This injects on the destination, so the transfer row and both balance changes are
-    // already in place and only the ledger entries are still to come. Everything written so far must
-    // disappear, including the idempotency claim written before any of it.
     const source = await account();
     const destination = await account(0n);
     const key = randomUUID();
@@ -379,9 +333,6 @@ describe("the money path under load", () => {
   });
 
   it("a failing sender does not disturb twelve concurrent senders paying the same wallet", async () => {
-    // One destination wallet, thirteen senders. Twelve must complete while the thirteenth
-    // fails part way through and rolls back, so the failure is isolated to its own
-    // transaction rather than to the row everyone is contending for.
     const destination = await account(0n);
     const senders = await Promise.all(Array.from({ length: 12 }, () => account(500n)));
     const doomed = await account(500n);

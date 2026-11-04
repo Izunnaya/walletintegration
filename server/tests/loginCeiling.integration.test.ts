@@ -13,14 +13,6 @@ vi.hoisted(() => {
 });
 import app from "../src/app.ts";
 
-// The per-account login ceiling, in a file of its own.
-//
-// Proving a sixty-per-minute limit costs more than sixty requests, and it has to be more
-// than sixty because that is the number. Run alongside the other limiter tests, that load
-// reset the shared test server and took two unrelated assertions down with it - a flake that
-// said nothing about the limiter. Its own file means its own app, its own server, and a
-// failure here can only be about this limit.
-
 const CEILING = 60;
 const PER_CLIENT = 10;
 
@@ -58,9 +50,6 @@ function login(clientIp: string, email: string) {
 
 describe("the per-account login ceiling", () => {
   it("caps total attempts on one account across many clients", async () => {
-    // Nine attempts per address keeps each client under its own per-account limit of ten and
-    // under the per-IP auth limit of twenty, so the only thing that can refuse this is the
-    // ceiling. Spread over enough addresses to cross sixty.
     const statuses: number[] = [];
 
     for (let client = 0; client < 8 && !statuses.includes(429); client += 1) {

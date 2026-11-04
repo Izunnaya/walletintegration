@@ -30,17 +30,15 @@ app.use(corsMiddleware);
 // Record parser failures with the same request ID returned to the caller.
 app.use(httpLogger);
 
-// Reads the JSON body of a request into req.body. Without this line req.body is undefined.
 app.use(express.json({ limit: "16kb" }));
 
-// Each prefix is forwarded to its router
 app.use("/health", HealthRoute);
 app.use("/auth", AuthRoute);
 app.use("/wallets", WalletRoute);
 app.use("/admin", AdminRoute);
 app.use("/transfers", TransferRoute);
 
-// These two run last. respondNotFound when no route matched, respondInternalError when a route threw
+// Error handlers must follow the routes.
 app.use(respondNotFound);
 app.use(respondInternalError);
 
