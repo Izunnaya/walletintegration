@@ -2,6 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import type { ZodType } from "zod";
 import { describeIssues, transferRequestSchema, idempotencyKeySchema } from "../domain/transferRequest.ts";
 import { loginRequestSchema, registerRequestSchema } from "../domain/authRequest.ts";
+import { adminUserQuerySchema } from "../domain/adminUserQuery.ts";
 import { transferHistoryQuerySchema } from "../domain/transferHistoryQuery.ts";
 import { restrictionRequestSchema } from "../domain/restrictionRequest.ts";
 
@@ -71,5 +72,7 @@ export const validateQuery = (schema: ZodType) => (req: Request, res: Response, 
 };
 
 export const validateTransferHistoryQuery = validateQuery(transferHistoryQuerySchema);
+
+export const validateAdminUserQuery = validateQuery(adminUserQuerySchema);
 
 export const validateRestrictionRequest = validateBody(restrictionRequestSchema);

@@ -81,10 +81,12 @@ unknown table in [domain.md](domain.md).
 | `POST /auth/login` | Public | **Built** |
 | `GET /wallets/me` | User | **Built** |
 | `POST /transfers` | User | **Built** |
-| `GET /transfers` | User | Not built |
-| `GET /transfers/:id` | User | Not built |
-| `POST /admin/users/:id/block` | Admin | Not built |
-| `POST /admin/users/:id/unblock` | Admin | Not built |
+| `GET /transfers` | User | **Built** |
+| `GET /transfers/:id` | User | **Built** |
+| `GET /admin/users` | Admin | **Built** |
+| `POST /admin/users/:id/block` | Admin | **Built** |
+| `POST /admin/users/:id/unblock` | Admin | **Built** |
+| `GET /admin/audit` | Admin | **Built** |
 
 ### `GET /health/live` — built
 
@@ -157,16 +159,53 @@ business refusal, `429` rate limited, `503` uncertain — retry with the same ke
 
 A replayed key returns the original response with the original status.
 
-### `GET /transfers` — not built
+### `GET /transfers` — built
 
 Transfers the caller is a party to, newest first, paginated. Never anyone else's.
 
-### `GET /transfers/:id` — not built
+### `GET /transfers/:id` — built
 
 One transfer, if the caller sent or received it. `404` otherwise, including when
 the transfer exists.
 
-### `POST /admin/users/:id/block` and `/unblock` — not built
+### `GET /admin/users` — built
+
+Admin only. The accounts an admin can act on, newest first, keyset paginated on
+the user id the same way the transfer history is. `search` matches name, email
+and wallet id, and runs in the database rather than over the returned page, so
+finding one account among many does not require paging to it.
+
+Each row carries `isBlocked` and `isBlacklisted` separately, because they are
+different refusals: blocking is reversible through the endpoints below,
+blacklisting is keyed by email and is not lifted here. `passwordHash` is never
+selected.
+
+```
+GET /admin/users?limit=20&cursor=<user id>&search=<text>
+```
+
+```json
+{
+  "users": [
+    {
+      "id": "42",
+      "name": "Ada Okafor",
+      "email": "ada@example.com",
+      "role": "customer",
+      "isBlocked": false,
+      "isBlacklisted": false,
+      "createdAt": "2026-10-28T10:00:00.000Z",
+      "wallet": { "publicId": "wlt_...", "currency": "NGN", "balanceMinor": "1245099" }
+    }
+  ],
+  "nextCursor": "41"
+}
+```
+
+`wallet` is null for an account with no NGN wallet, which the schema allows even
+though registration always creates one.
+
+### `POST /admin/users/:id/block` and `/unblock` — built
 
 Admin only. The restriction change and its audit row commit together, so there is
 no restriction without a record of who made it and why. Both lock the affected
