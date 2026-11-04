@@ -11,6 +11,10 @@ const TransactionsPage = lazy(() => import("./pages/TransactionsPage"));
 const TransferDetailPage = lazy(() => import("./pages/TransferDetailPage"));
 const AccountAccessPage = lazy(() => import("./pages/AccountAccessPage"));
 const AuditLogPage = lazy(() => import("./pages/AuditLogPage"));
+const UserManagementPage = lazy(() => import("./pages/UserManagementPage"));
+const AdminCreateAccountPage = lazy(
+  () => import("./pages/AdminCreateAccountPage"),
+);
 const CreateAccountPage = lazy(() => import("./pages/CreateAccountPage"));
 const LoginPage = lazy(() => import("./pages/LoginPage"));
 
@@ -53,6 +57,8 @@ const AppRoutes = () => (
           <Route path="/transactions" element={<TransactionsPage />} />
           <Route path="/transactions/:id" element={<TransferDetailPage />} />
           <Route element={<RequireAdmin />}>
+            <Route path="/admin/users" element={<UserManagementPage />} />
+            <Route path="/admin/create" element={<AdminCreateAccountPage />} />
             <Route path="/admin/access" element={<AccountAccessPage />} />
             <Route path="/admin/audit" element={<AuditLogPage />} />
           </Route>

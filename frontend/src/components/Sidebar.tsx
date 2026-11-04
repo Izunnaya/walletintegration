@@ -6,9 +6,11 @@ import {
   Lock,
   LogOut,
   Moon,
+  Plus,
   ShieldCheck,
   Sun,
   ScrollText,
+  Users,
   Wallet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -22,6 +24,8 @@ const links = [
   { to: "/transactions", label: "Transactions", icon: ArrowLeftRight },
 ];
 const adminLinks = [
+  { to: "/admin/users", label: "User management", icon: Users },
+  { to: "/admin/create", label: "Create account", icon: Plus },
   { to: "/admin/access", label: "Account access", icon: ShieldCheck },
   { to: "/admin/audit", label: "Audit log", icon: ScrollText },
 ];
