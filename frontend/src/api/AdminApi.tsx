@@ -1,4 +1,5 @@
 import {
+  keepPreviousData,
   useInfiniteQuery,
   useMutation,
   useQuery,
@@ -26,6 +27,8 @@ export const useUsers = (search: string) => {
       ),
     getNextPageParam: (page) => page.nextCursor ?? undefined,
     enabled: session?.user.role === "admin",
+    // Keep the rows on screen while a new search runs, rather than blanking the table.
+    placeholderData: keepPreviousData,
   });
   return {
     ...query,

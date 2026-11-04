@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, Plus, Search, Users } from "lucide-react";
 import { useUsers, useSetRestriction } from "@/api/AdminApi";
 import { useAuth } from "@/auth/AuthProvider";
 import { useRetryAfter } from "@/hooks/useRetryAfter";
+import { useDebounced } from "@/hooks/useDebounced";
 import ApiFeedback from "@/components/ApiFeedback";
 import PageHeading from "@/components/PageHeading";
 import LoadingButton from "@/components/LoadingButton";
@@ -34,6 +35,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { money } from "@/lib/money";
 import type { AdminUser } from "@/api/contracts";
 
@@ -51,7 +59,7 @@ const UserManagementPage = () => {
   const [page, setPage] = useState(0);
   const [managing, setManaging] = useState<AdminUser | null>(null);
   const [reason, setReason] = useState("");
-  const query = useUsers(search);
+  const query = useUsers(useDebounced(search));
   const { setRestriction, isPending, error, reset } = useSetRestriction();
   const retryAfter = useRetryAfter(error);
 
@@ -198,19 +206,17 @@ const UserManagementPage = () => {
             </TableBody>
           </Table>
           {rows.length === 0 && (
-            <div className="flex flex-col items-center justify-center gap-4 p-6 text-center">
-              <div className="flex max-w-96 flex-col items-center gap-2">
-                <div className="mb-2 flex size-8 items-center justify-center rounded-lg bg-muted">
-                  <Users className="size-4" />
-                </div>
-                <p className="text-sm font-medium tracking-tight">
-                  No users found
-                </p>
-                <p className="text-sm leading-relaxed text-muted-foreground">
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Users />
+                </EmptyMedia>
+                <EmptyTitle>No users found</EmptyTitle>
+                <EmptyDescription>
                   Try another name, email, or wallet ID.
-                </p>
-              </div>
-            </div>
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           )}
           <div className="flex items-center justify-between border-t px-5 py-3 text-xs text-muted-foreground">
             <span>

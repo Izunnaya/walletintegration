@@ -1,6 +1,5 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQueryClient } from "@tanstack/react-query";
 import { ArrowRight, Check, Copy } from "lucide-react";
 import { motion } from "framer-motion";
 import { useCreateAccount } from "@/api/AuthApi";
@@ -24,14 +23,12 @@ const AdminCreateAccountPage = () => {
   const { createAccount, isPending, error } = useCreateAccount();
   const retryAfter = useRetryAfter(error);
   const navigate = useNavigate();
-  const queryClient = useQueryClient();
   const [created, setCreated] = useState<Registration | null>(null);
 
   const onSave = async (data: CreateAccountFormData) => {
     if (retryAfter > 0) return;
     try {
       setCreated(await createAccount(data));
-      void queryClient.invalidateQueries({ queryKey: ["admin", "users"] });
     } catch {
       /* The mutation error is rendered below. */
     }

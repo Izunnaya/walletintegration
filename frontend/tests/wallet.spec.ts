@@ -58,6 +58,22 @@ async function setupApi(page: Page, role: "customer" | "admin" = "customer") {
       key: string | undefined;
     }[],
     restrictions: [] as { path: string; body: unknown }[],
+    accounts: [
+      {
+        id: "2",
+        name: "Bode Adeyemi",
+        email: "bode@example.com",
+        role: "customer",
+        isBlocked: false,
+        isBlacklisted: false,
+        createdAt,
+        wallet: {
+          publicId: "wlt_" + "b".repeat(32),
+          currency: "NGN",
+          balanceMinor: "25000",
+        },
+      },
+    ],
     failure: 0,
     loginFailure: false,
     invalidLogin: false,
@@ -120,6 +136,21 @@ async function setupApi(page: Page, role: "customer" | "admin" = "customer") {
     }
     if (path === "/auth/register") {
       const body: { name: string; email: string } = request.postDataJSON();
+      // Newest first, the order the real endpoint returns.
+      state.accounts.unshift({
+        id: "333",
+        name: body.name,
+        email: body.email,
+        role: "customer",
+        isBlocked: false,
+        isBlacklisted: false,
+        createdAt,
+        wallet: {
+          publicId: "wlt_" + "c".repeat(32),
+          currency: "NGN",
+          balanceMinor: "0",
+        },
+      });
       return json(
         {
           user: { ...customer, name: body.name, email: body.email },
@@ -224,6 +255,15 @@ async function setupApi(page: Page, role: "customer" | "admin" = "customer") {
           },
         ],
       });
+    if (path === "/admin/users") {
+      const term = (url.searchParams.get("search") ?? "").toLowerCase();
+      const matching = term
+        ? state.accounts.filter((account) =>
+            (account.name + account.email).toLowerCase().includes(term),
+          )
+        : state.accounts;
+      return json({ users: matching, nextCursor: null });
+    }
     if (path.startsWith("/admin/users/")) {
       state.restrictions.push({ path, body: request.postDataJSON() });
       return json({
@@ -636,4 +676,88 @@ test("a saved numeric transfer remains recoverable after public IDs are introduc
   await expect(
     page.getByText(destinationPublicId, { exact: true }),
   ).toBeVisible();
+});
+
+test("an account an admin creates appears in user management", async ({
+  page,
+}) => {
+  await setupApi(page, "admin");
+  await login(page);
+  await page.getByRole("link", { name: "Create account", exact: true }).click();
+  await page.getByLabel("Full name").fill("Jamie Taylor");
+  await page.getByLabel("Email address").fill("jamie@example.com");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("correct horse battery staple");
+  await page
+    .getByRole("button", { name: "Create account", exact: true })
+    .click();
+  await expect(page.getByText("A new wallet, ready to go.")).toBeVisible();
+
+  // The list is the point: creating an account that the next screen does not show
+  // sends an admin looking for a record that is already there.
+  await page.getByRole("button", { name: "View accounts" }).click();
+  await expect(
+    page.getByRole("cell", { name: /Jamie Taylor/ }),
+  ).toBeVisible();
+});
+
+test("a created account appears in a user list that was already open", async ({
+  page,
+}) => {
+  await setupApi(page, "admin");
+  await login(page);
+  // Visit the list first, so it is cached before the account exists.
+  await page
+    .getByRole("link", { name: "User management", exact: true })
+    .click();
+  await expect(page.getByRole("cell", { name: /Bode Adeyemi/ })).toBeVisible();
+  await expect(page.getByRole("cell", { name: /Jamie Taylor/ })).toHaveCount(0);
+
+  await page
+    .getByRole("navigation", { name: "Main navigation" })
+    .getByRole("link", { name: "Create account", exact: true })
+    .click();
+  await page.getByLabel("Full name").fill("Jamie Taylor");
+  await page.getByLabel("Email address").fill("jamie@example.com");
+  await page
+    .getByLabel("Password", { exact: true })
+    .fill("correct horse battery staple");
+  await page
+    .getByRole("button", { name: "Create account", exact: true })
+    .click();
+  await expect(page.getByText("A new wallet, ready to go.")).toBeVisible();
+
+  await page
+    .getByRole("link", { name: "User management", exact: true })
+    .click();
+  await expect(page.getByRole("cell", { name: /Jamie Taylor/ })).toBeVisible();
+});
+
+test("searching users does not send a request per keystroke", async ({
+  page,
+}) => {
+  await setupApi(page, "admin");
+  // Counted on the wire rather than in the route handler: a fetch the client aborts has
+  // already left, and the server has already counted it against the rate limit.
+  let sent = 0;
+  page.on("request", (request) => {
+    if (request.url().includes("/admin/users?")) sent += 1;
+  });
+  await login(page);
+  await page
+    .getByRole("link", { name: "User management", exact: true })
+    .click();
+  await expect(page.getByRole("cell", { name: /Bode Adeyemi/ })).toBeVisible();
+
+  const before = sent;
+  // The admin endpoints allow thirty requests a minute. Typing an address unthrottled
+  // spends most of that budget and answers the search itself with a 429.
+  await page.getByLabel("Search users").pressSequentially("bode@example.com", {
+    delay: 30,
+  });
+  await expect(page.getByRole("cell", { name: /Bode Adeyemi/ })).toBeVisible();
+  await page.waitForTimeout(900);
+
+  expect(sent - before).toBeLessThanOrEqual(2);
 });

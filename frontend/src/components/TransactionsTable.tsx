@@ -20,6 +20,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { money } from "@/lib/money";
 import { easeOut, panelVariants } from "@/lib/motion";
 import { cn } from "@/lib/utils";
@@ -244,23 +251,23 @@ const TransactionsTable = ({
         </TableBody>
       </Table>
       {rows.length === 0 && (
-        <div className="flex flex-col items-center justify-center gap-4 p-6 text-center">
-          <div className="flex max-w-96 flex-col items-center gap-2">
-            <div className="mb-2 flex size-8 items-center justify-center rounded-lg bg-muted">
-              <ArrowLeftRight className="size-4" />
-            </div>
-            <p className="text-sm font-medium tracking-tight">
+        <Empty>
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <ArrowLeftRight />
+            </EmptyMedia>
+            <EmptyTitle>
               {transfers.length === 0
                 ? "No transactions yet"
                 : "No matching transactions"}
-            </p>
-            <p className="text-sm leading-relaxed text-muted-foreground">
+            </EmptyTitle>
+            <EmptyDescription>
               {transfers.length === 0
                 ? "Your completed transfers will appear here."
                 : "Try a different filter or search term."}
-            </p>
-          </div>
-        </div>
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
       )}
       <div className="flex items-center justify-between border-t px-6 py-3 text-xs text-muted-foreground">
         <span>

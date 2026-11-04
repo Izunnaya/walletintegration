@@ -15,6 +15,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { ScrollText } from "lucide-react";
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from "@/components/ui/empty";
 
 const AuditLogPage = () => {
   const query = useAuditEntries();
@@ -99,19 +106,17 @@ const AuditLogPage = () => {
             </TableBody>
           </Table>
           {!query.isError && query.entries.length === 0 && (
-            <div className="flex flex-col items-center justify-center gap-4 p-6 text-center">
-              <div className="flex max-w-96 flex-col items-center gap-2">
-                <div className="mb-2 flex size-8 items-center justify-center rounded-lg bg-muted">
-                  <ScrollText className="size-4" />
-                </div>
-                <p className="text-sm font-medium tracking-tight">
-                  No restriction changes recorded
-                </p>
-                <p className="text-sm leading-relaxed text-muted-foreground">
+            <Empty>
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <ScrollText />
+                </EmptyMedia>
+                <EmptyTitle>No restriction changes recorded</EmptyTitle>
+                <EmptyDescription>
                   Blocking or unblocking an account will show up here.
-                </p>
-              </div>
-            </div>
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           )}
         </section>
       )}
