@@ -1,9 +1,15 @@
 # Deployment
 
-The API deploys to Render; the database is Neon. Both are free tiers, and the split is
+The API and the browser client both deploy to Render, as two services from one
+[`render.yaml`](../render.yaml); the database is Neon. All free tiers, and the Neon split is
 deliberate — see **Why Neon rather than Render PostgreSQL** below.
 
-## What you do once, in the Render dashboard
+The API is a Node web service: a process that runs, sleeps when idle, and talks to the database.
+The frontend is a static site: Vite builds it to files Render serves, so there is no instance, no
+sleep and nothing to wake. They deploy independently, and `buildFilter` on the static site means an
+API-only commit does not rebuild the UI.
+
+## The API, once, in the Render dashboard
 
 1. **New → Web Service**, connect `Izunnaya/walletintegration`, pick the branch.
 2. Render reads [`render.yaml`](../render.yaml) and fills in the root directory, build command,
@@ -12,7 +18,7 @@ deliberate — see **Why Neon rather than Render PostgreSQL** below.
    | Setting | Value |
    | --- | --- |
    | Root directory | `server` |
-   | Build command | `npm ci && npm run migrate && npm run build` |
+   | Build command | `npm ci --include=dev && npm run migrate && npm run build` |
    | Start command | `npm start` |
    | Health check path | `/health/ready` |
 
@@ -57,6 +63,34 @@ deliberate — see **Why Neon rather than Render PostgreSQL** below.
    connection string — there is no need for a shell on the web service, which the free plan
    does not provide anyway.
 
+## The frontend, once, in the Render dashboard
+
+1. **New → Static Site**, same repository, same branch. Render reads the second service in
+   [`render.yaml`](../render.yaml). Confirm the settings read:
+
+   | Setting | Value |
+   | --- | --- |
+   | Root directory | `frontend` |
+   | Build command | `npm ci && npm run build` |
+   | Publish directory | `./dist` |
+
+2. **There are no secrets to set.** `VITE_API_BASE_URL` is in the blueprint with a value, not
+   `sync: false`, because Vite inlines every `VITE_` variable into the bundle at build time — the
+   value is public the moment the site ships, so hiding it in the dashboard would buy nothing and
+   cost a reviewable diff. Change the API it points at by editing the blueprint.
+
+3. **Then add the new origin to the API's `CORS_ORIGINS`** and redeploy the API. This is the step
+   that is easy to miss, because nothing about it looks like a frontend problem: the UI loads, the
+   API answers correctly, and the browser throws every response away. Render only tells you the
+   static site's URL once the service exists, which is why this cannot be done first.
+
+   ```
+   CORS_ORIGINS=https://wallet-frontend.onrender.com
+   ```
+
+   Comma-separated if there is more than one, no trailing slash, and the scheme matters — an origin
+   is scheme, host and port, so `http://` will not match `https://`.
+
 ## Checks that prove it is actually up
 
 ```sh
@@ -79,6 +113,11 @@ curl -sX POST https://<service>.onrender.com/auth/login \
 
 **The first request after a pause is slow.** Free web services sleep when idle, and waking takes
 tens of seconds. Say so in the submission rather than letting a reviewer discover it.
+
+**A reload on `/transfer` works, and that is a setting, not luck.** React Router owns the URL
+after the first load, so a direct visit or a refresh asks Render for a file that does not exist.
+The `rewrite` route in the blueprint serves `index.html` for anything that is not a real file.
+Remove it and every URL except `/` answers 404 — which looks like a broken router and is not.
 
 **`index.ts` runs `SELECT 1` before it listens.** That is deliberate: it means the process pays for
 the connection handshake rather than the first user, and the service refuses to start at all if the

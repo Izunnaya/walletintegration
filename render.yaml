@@ -6,7 +6,7 @@ services:
     runtime: node
     plan: free
     # The API is one package inside the repository, so Render builds from server/ and the
-    # frontend is ignored entirely.
+    # frontend is ignored entirely. The UI deploys as its own static site, below.
     rootDir: server
     # npm ci installs exactly the lockfile. postinstall runs prisma generate, so the client
     # exists before tsc compiles against it. migrate deploy applies any pending migration
@@ -39,3 +39,35 @@ services:
       # request; debug is for a live investigation and should be put back afterwards.
       - key: LOG_LEVEL
         value: info
+
+  # The browser client. A static site, not a Node service: Vite builds it to plain files and
+  # there is nothing left to run, so it costs no instance and never sleeps the way the free
+  # API does.
+  - type: web
+    name: wallet-frontend
+    runtime: static
+    # The second package in the monorepo. Render builds from frontend/ and never sees server/.
+    rootDir: frontend
+    # npm ci installs exactly the lockfile. The build script is `tsc -b && vite build`, so a
+    # type error fails the deploy here rather than shipping a broken bundle.
+    buildCommand: npm ci && npm run build
+    staticPublishPath: ./dist
+    # Without this, a commit that only touches the API would rebuild and redeploy the UI for
+    # no reason. Paths are relative to the repository root, not to rootDir.
+    buildFilter:
+      paths:
+        - frontend/**
+    # React Router owns the URL after the first load. A reload on /transfer asks Render for a
+    # file that does not exist, and the default answer is 404 - so every path that is not a
+    # real file serves index.html and lets the router read it. Static files still win, because
+    # a rewrite only applies when nothing matched.
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      # Public build configuration, not a secret: Vite inlines anything VITE_ prefixed into
+      # the bundle, so this value ships to every browser. It is written here rather than set
+      # in the dashboard precisely because it is public and worth reviewing in a diff.
+      - key: VITE_API_BASE_URL
+        value: https://walletintegration-6t6r.onrender.com

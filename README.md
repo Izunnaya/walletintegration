@@ -173,7 +173,8 @@ What the suite does **not** establish is listed in
 
 ## Deployment
 
-Live on Render, built from `server/` as the root of this monorepo.
+Live on Render as two services from one [`render.yaml`](render.yaml): the API as a Node web
+service built from `server/`, and the browser client as a static site built from `frontend/`.
 [docs/deployment.md](docs/deployment.md) has the step-by-step and the checks that prove it
 is up.
 
@@ -189,7 +190,10 @@ is up.
   [docs/known-limitations.md](docs/known-limitations.md) for why the deployed value is still
   outstanding and what it does and does not affect.
 - The free plan sleeps when idle, so the first request after a pause takes up to a minute.
-  The UI shows a notice rather than appearing to hang.
+  The UI shows a notice rather than appearing to hang. The static site does not sleep — it is
+  files, not a process — so a cold start is always the API, never the page.
+- The frontend's `CORS_ORIGINS` entry on the API is what makes the deployed UI work at all.
+  Without it the page loads and the browser discards every response.
 
 ### Rate limits
 
