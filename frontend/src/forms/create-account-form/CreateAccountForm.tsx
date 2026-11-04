@@ -1,3 +1,4 @@
+import { Plus } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -35,10 +36,11 @@ const CreateAccountForm = ({ isLoading, retryAfter, onSave }: Props) => {
     <form onSubmit={handleSubmit(onSave)} noValidate>
       <FieldGroup>
         <Field>
-          <FieldLabel htmlFor="register-name">Name</FieldLabel>
+          <FieldLabel htmlFor="register-name">Full name</FieldLabel>
           <Input
             id="register-name"
             autoComplete="name"
+            placeholder="e.g. Jamie Taylor"
             {...register("name")}
             aria-invalid={!!errors.name}
           />
@@ -49,11 +51,12 @@ const CreateAccountForm = ({ isLoading, retryAfter, onSave }: Props) => {
           )}
         </Field>
         <Field>
-          <FieldLabel htmlFor="register-email">Email</FieldLabel>
+          <FieldLabel htmlFor="register-email">Email address</FieldLabel>
           <Input
             id="register-email"
             type="email"
             autoComplete="username"
+            placeholder="jamie@example.com"
             {...register("email")}
             aria-invalid={!!errors.email}
           />
@@ -86,6 +89,7 @@ const CreateAccountForm = ({ isLoading, retryAfter, onSave }: Props) => {
           loadingLabel="Creating account..."
         >
           {retryAfter > 0 ? `Retry in ${retryAfter}s` : "Create account"}
+          <Plus />
         </LoadingButton>
       </FieldGroup>
     </form>

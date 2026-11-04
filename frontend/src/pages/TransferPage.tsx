@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ShieldCheck } from "lucide-react";
 import { useMyWallet } from "@/api/WalletApi";
 import { useTransferAttempt } from "@/forms/transfer-form/useTransferAttempt";
 import TransferForm from "@/forms/transfer-form/TransferForm";
@@ -41,8 +42,8 @@ const TransferPage = () => {
   return (
     <>
       <PageHeading
-        title="Send money"
-        description="Transfer between NGN wallets."
+        title="Transfer"
+        description="Move money simply. From your wallet to theirs."
       />
       {transfer.unconfirmed && (
         <Alert className="mb-6">
@@ -62,9 +63,12 @@ const TransferPage = () => {
           <ApiFeedback error={transfer.error} />
         </div>
       )}
-      <div className="grid items-start gap-6 lg:grid-cols-[1.5fr_1fr]">
-        <section className="rounded-xl border bg-card p-6">
-          <h2 className="mb-6 text-base font-semibold">Transfer details</h2>
+      <div className="grid items-start gap-7 lg:grid-cols-[1.5fr_1fr]">
+        <section className="rounded-xl border p-6">
+          <h2 className="mb-1 text-base font-semibold">Send a transfer</h2>
+          <p className="mb-7 text-xs text-muted-foreground">
+            Transfers between wallets are instant and free.
+          </p>
           <TransferForm
             fromWalletId={walletId!}
             balanceMinor={query.wallet.balanceMinor}
@@ -74,13 +78,16 @@ const TransferPage = () => {
             onInputChange={transfer.clear}
           />
         </section>
-        <aside className="rounded-xl border bg-muted/20 p-6 text-sm">
-          <h2 className="font-medium">Check before you send</h2>
-          <p className="mt-3 leading-6 text-muted-foreground">
-            Ask the recipient for their wallet ID. The review shows the exact
-            amount and destination before you confirm.
+        <aside className="rounded-xl border bg-muted/25 p-6">
+          <div className="mb-3 flex items-center gap-2 text-sm font-medium">
+            <ShieldCheck className="size-4" />
+            Send with confidence
+          </div>
+          <p className="text-xs leading-6 text-muted-foreground">
+            Double-check the recipient's wallet ID. You'll review every detail
+            before confirming your transfer.
           </p>
-          <p className="mt-3 leading-6 text-muted-foreground">
+          <p className="mt-3 text-xs leading-6 text-muted-foreground">
             If a connection is interrupted, check the existing transfer rather
             than starting it again.
           </p>
@@ -90,9 +97,9 @@ const TransferPage = () => {
         <TransferConfirmDialog
           open={dialogOpen}
           onOpenChange={setDialogOpen}
-          sourceWalletId={transfer.attempt.sourceWalletId}
           destinationWalletId={transfer.attempt.destinationWalletId}
           amountMinor={transfer.attempt.amountMinor}
+          idempotencyKey={transfer.attempt.idempotencyKey}
           error={transfer.error}
           unconfirmed={transfer.unconfirmed}
           rejected={transfer.attempt.phase === "rejected"}

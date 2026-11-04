@@ -1,3 +1,4 @@
+import { ArrowRight } from "lucide-react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -58,16 +59,13 @@ const TransferForm = ({
         <Field>
           <FieldLabel htmlFor="from">From wallet</FieldLabel>
           <Input id="from" readOnly value={fromWalletId} />
-          <FieldDescription>
-            Current balance: {money(balanceMinor)}
-          </FieldDescription>
+          <FieldDescription>Available: {money(balanceMinor)}</FieldDescription>
         </Field>
         <Field>
-          <FieldLabel htmlFor="recipient">Recipient wallet ID</FieldLabel>
+          <FieldLabel htmlFor="recipient">To wallet ID</FieldLabel>
           <Input
             id="recipient"
-
-            placeholder="wlt_..."
+            placeholder="wlt_…"
             disabled={disabled || isSubmitting}
             {...register("recipientWalletId")}
             aria-invalid={!!errors.recipientWalletId}
@@ -101,6 +99,7 @@ const TransferForm = ({
           disabled={disabled}
         >
           Review transfer
+          <ArrowRight />
         </LoadingButton>
       </FieldGroup>
     </form>

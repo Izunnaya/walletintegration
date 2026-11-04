@@ -14,9 +14,9 @@ import ApiFeedback from "@/components/ApiFeedback";
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  sourceWalletId: string;
   destinationWalletId: string;
   amountMinor: string;
+  idempotencyKey: string;
   error: unknown;
   unconfirmed: boolean;
   rejected: boolean;
@@ -25,12 +25,16 @@ type Props = {
   onConfirm: () => void;
   onStartOver: () => void;
 };
+
+// The source wallet is not repeated here. It is the signed-in wallet, already shown on the
+// form as a read-only field, and the design gives the dialog to the one detail worth
+// re-reading before money moves: where it is going.
 const TransferConfirmDialog = ({
   open,
   onOpenChange,
-  sourceWalletId,
   destinationWalletId,
   amountMinor,
+  idempotencyKey,
   error,
   unconfirmed,
   rejected,
@@ -57,28 +61,33 @@ const TransferConfirmDialog = ({
         <DialogDescription>
           {unconfirmed
             ? "The outcome is not confirmed. Check this transfer before starting another."
-            : "Check the wallet IDs and amount before confirming."}
+            : "Check these details before sending."}
         </DialogDescription>
       </DialogHeader>
-      <p className="my-3 text-3xl font-semibold">{money(amountMinor)}</p>
-      <dl className="space-y-3 text-sm">
-        <div className="flex justify-between gap-3">
-          <dt>From wallet</dt>
-          <dd className="break-all font-mono">{sourceWalletId}</dd>
+      <div className="my-4 flex flex-col gap-4">
+        <p className="text-3xl font-semibold tracking-tight">
+          {money(amountMinor)}
+        </p>
+        <p className="text-xs text-muted-foreground">To wallet</p>
+        <code className="break-all rounded-md bg-muted p-3 text-xs">
+          {destinationWalletId}
+        </code>
+        <div className="flex justify-between text-xs">
+          <span className="text-muted-foreground">Transfer fee</span>
+          <span>{money("0")}</span>
         </div>
-        <div className="flex justify-between gap-3">
-          <dt>To wallet</dt>
-          <dd className="break-all font-mono">{destinationWalletId}</dd>
-        </div>
-      </dl>
-      <ApiFeedback error={error} />
+        <p className="break-all text-[10px] text-muted-foreground">
+          Idempotency-Key: {idempotencyKey}
+        </p>
+        <ApiFeedback error={error} />
+      </div>
       <DialogFooter>
         <Button
           variant="outline"
           disabled={isPending}
           onClick={() => onOpenChange(false)}
         >
-          Close
+          Go back
         </Button>
         {rejected ? (
           <Button onClick={onStartOver}>Start a new transfer</Button>

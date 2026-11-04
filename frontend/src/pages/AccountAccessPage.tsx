@@ -37,10 +37,14 @@ const AccountAccessPage = () => {
     <>
       <PageHeading
         title="Account access"
-        description="Block or unblock transfers for a customer account."
+        description="Manage accounts and keep your workspace secure."
       />
-      <section className="max-w-xl space-y-6 rounded-xl border bg-card p-6">
-        <p className="text-sm text-muted-foreground">
+      <section className="max-w-xl rounded-xl border p-6">
+        <h2 className="text-base font-semibold">Manage access</h2>
+        <p className="mb-7 mt-1 text-xs text-muted-foreground">
+          Block or unblock transfers for a customer account.
+        </p>
+        <p className="mb-6 text-xs leading-relaxed text-muted-foreground">
           Blocking prevents transfers in both directions. Unblocking does not
           remove a blacklist restriction. Every change records your reason in
           the{" "}
@@ -50,7 +54,7 @@ const AccountAccessPage = () => {
           .
         </p>
         {data && (
-          <Alert>
+          <Alert className="mb-6">
             <AlertDescription>
               <p>
                 {data.changed
@@ -81,7 +85,8 @@ const AccountAccessPage = () => {
           <DialogHeader>
             <DialogTitle>Confirm {review?.action}</DialogTitle>
             <DialogDescription>
-              User ID {review?.userId}. Reason: {review?.reason}
+              User ID {review?.userId}. A reason is required for the audit
+              record, and this one reads: {review?.reason}
             </DialogDescription>
           </DialogHeader>
           <ApiFeedback error={error} />

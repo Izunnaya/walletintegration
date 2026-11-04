@@ -1,5 +1,5 @@
 import { Link } from "react-router-dom";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/auth/AuthProvider";
 import { useMyWallet } from "@/api/WalletApi";
 import { useTransfers } from "@/api/TransferApi";
@@ -21,9 +21,9 @@ const OverviewPage = () => {
   return (
     <>
       <PageHeading
-        eyebrow="YOUR WALLET"
+        eyebrow="YOUR PERSONAL WALLET"
         title={`Hello, ${session?.user.name ?? "there"}`}
-        description="Your balance and latest transfers."
+        description="A little clarity for your everyday money."
         action={
           <Link to="/transfer" className={buttonVariants()}>
             <ArrowUpRight />
@@ -40,16 +40,8 @@ const OverviewPage = () => {
         <>
           <BalanceCard
             wallet={walletQuery.wallet}
-            userId={session?.user.id ?? ""}
+            transfers={history.transfers}
           />
-          <Button
-            variant="outline"
-            className="mb-6"
-            disabled={walletQuery.isFetching}
-            onClick={() => void walletQuery.refetch()}
-          >
-            Refresh balance
-          </Button>
           <ApiFeedback error={walletQuery.error} />
         </>
       ) : (
@@ -68,6 +60,19 @@ const OverviewPage = () => {
       ) : (
         <TransactionsTable transfers={history.transfers} />
       )}
+      <div className="mt-6 flex items-center gap-2 text-[11px] text-muted-foreground">
+        <ShieldCheck className="size-3.5 shrink-0" />
+        <span>A clear record. Every transfer, every time.</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          className="ml-auto"
+          disabled={walletQuery.isFetching}
+          onClick={() => void walletQuery.refetch()}
+        >
+          Refresh balance
+        </Button>
+      </div>
     </>
   );
 };

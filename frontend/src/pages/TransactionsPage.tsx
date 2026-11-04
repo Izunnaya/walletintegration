@@ -6,7 +6,6 @@ import {
   SlowRequestNotice,
   TransactionsTableSkeleton,
 } from "@/components/LoadingStates";
-import LoadingButton from "@/components/LoadingButton";
 
 const TransactionsPage = () => {
   const query = useTransfers();
@@ -14,7 +13,7 @@ const TransactionsPage = () => {
     <>
       <PageHeading
         title="Transactions"
-        description="Completed transfers, newest first."
+        description="Every movement, all in one place."
       />
       {query.isPending ? (
         <>
@@ -31,17 +30,16 @@ const TransactionsPage = () => {
                 : query.refetch());
             }}
           />
-          <TransactionsTable transfers={query.transfers} full />
-          {query.hasNextPage && (
-            <LoadingButton
-              className="mt-5"
-              loading={query.isFetchingNextPage}
-              loadingLabel="Loading transfers..."
-              onClick={() => void query.fetchNextPage()}
-            >
-              Load older transfers
-            </LoadingButton>
-          )}
+          {/* The design pages this table rather than appending to it, so the next button
+              owns fetching the following cursor page. */}
+          <TransactionsTable
+            transfers={query.transfers}
+            pages={query.data?.pages.map((apiPage) => apiPage.transfers) ?? []}
+            full
+            hasNextPage={query.hasNextPage}
+            isFetchingNextPage={query.isFetchingNextPage}
+            onLoadMore={() => void query.fetchNextPage()}
+          />
         </>
       )}
     </>

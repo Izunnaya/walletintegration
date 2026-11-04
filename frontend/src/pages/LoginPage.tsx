@@ -39,8 +39,8 @@ const LoginPage = () => {
   return (
     <>
       <h1 className="text-3xl font-semibold tracking-tight">Welcome back.</h1>
-      <p className="mb-7 mt-2 text-sm text-muted-foreground">
-        Sign in to your wallet.
+      <p className="mb-8 mt-2 text-sm text-muted-foreground">
+        A clearer view of your money.
       </p>
       {params.get("expired") === "1" && (
         <Alert className="mb-5">

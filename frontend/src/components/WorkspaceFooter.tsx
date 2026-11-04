@@ -1,36 +1,13 @@
-import { useServiceHealth } from "@/api/HealthApi";
-import { Button } from "@/components/ui/button";
-const WorkspaceFooter = () => {
-  const { isFetching, isError, refetch } = useServiceHealth();
-  return (
-    <footer className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t pt-5 text-xs text-muted-foreground">
-      <span>Folio wallet · NGN</span>
-      <div className="flex items-center gap-2" role="status">
-        <span
-          className={
-            isFetching
-              ? "text-muted-foreground"
-              : isError
-                ? "text-destructive"
-                : "text-success"
-          }
-        >
-          {isFetching
-            ? "Checking service..."
-            : isError
-              ? "Service unavailable"
-              : "Service online"}
-        </span>
-        <Button
-          variant="ghost"
-          size="sm"
-          onClick={() => void refetch()}
-          disabled={isFetching}
-        >
-          Check again
-        </Button>
-      </div>
-    </footer>
-  );
-};
+// The design closes every screen with one quiet line. The service indicator that used to
+// live here moved to the top bar, where the design puts it, so this is only the wordmark.
+const WorkspaceFooter = () => (
+  <footer className="mt-10 flex flex-wrap items-center justify-between gap-3 border-t pt-5 text-[10px] text-muted-foreground">
+    <span>
+      Folio workspace
+      <span className="mx-2">·</span>
+      Every transfer is recorded and reconciled.
+    </span>
+    <span>NGN · Nigerian Naira</span>
+  </footer>
+);
 export default WorkspaceFooter;
