@@ -219,6 +219,12 @@ way `GET /transfers` is. `search` matches name, email and wallet id, and runs in
 rather than over the returned page, so finding one account among many does not require paging to
 it.
 
+The system funding account is not listed. It has no usable login, only the seed moves money out
+of it, and its balance is negative by design because every customer wallet was funded from it -
+so listing it would offer a block that breaks transfers, and would put a negative balance in a
+response whose balances are otherwise guaranteed not to be. It cannot be reached through `search`
+either.
+
 `isBlocked` and `isBlacklisted` are separate fields because they are different refusals: blocking
 is reversible through the endpoints below, blacklisting is keyed by email and is not lifted there.
 `passwordHash` is never selected. `wallet` is null for an account without an NGN wallet, which the

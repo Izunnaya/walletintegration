@@ -138,6 +138,12 @@ const listUsers = async (
 ) => {
   const { limit, cursor, search } = res.locals.query;
 
+  // The funding account is not an account anyone administers. It has no usable login, only
+  // the seed moves money out of it, and its balance is negative by design because every
+  // customer wallet was funded from it - so listing it both offers a Block that would break
+  // transfers and sends a negative balance to a client that is right to refuse one.
+  const notSystem = { wallets: { none: { isSystem: true } } };
+
   const matching = search
     ? {
         OR: [
@@ -154,7 +160,9 @@ const listUsers = async (
 
   // One extra row to learn whether another page exists, then dropped.
   const rows = await prisma.user.findMany({
-    where: cursor === undefined ? matching : { AND: [matching, { id: { lt: cursor } }] },
+    where: {
+      AND: [notSystem, matching, ...(cursor === undefined ? [] : [{ id: { lt: cursor } }])],
+    },
     orderBy: { id: "desc" },
     take: limit + 1,
     select: {
