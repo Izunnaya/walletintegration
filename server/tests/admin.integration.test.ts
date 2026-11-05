@@ -280,3 +280,87 @@ describe("GET /admin/audit", () => {
     expect(Number(limited?.headers.get("retry-after"))).toBeGreaterThan(0);
   });
 });
+
+describe("GET /admin/users", () => {
+  // The listing feeds a screen that blocks and unblocks accounts, so what it leaves out
+  // matters as much as what it returns.
+  async function list(query: string, token = adminToken) {
+    const response = await fetch(`${baseUrl}/admin/users${query}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    return {
+      status: response.status,
+      body: (await response.json()) as {
+        users?: { email: string; isBlocked: boolean; isBlacklisted: boolean;
+                  wallet: { balanceMinor: string } | null }[];
+        nextCursor?: string | null;
+      },
+    };
+  }
+
+  it("refuses a customer", async () => {
+    const { status } = await list("", customerToken);
+    expect(status).toBe(403);
+  });
+
+  it("never returns a password hash", async () => {
+    const response = await fetch(`${baseUrl}/admin/users`, {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(await response.text()).not.toContain("passwordHash");
+  });
+
+  // The regression this test exists for: the funding wallet's balance is negative, because
+  // every other wallet was funded from it, and a client that requires balances to be digits
+  // refused the whole response over that one row.
+  it("leaves out the system funding account", async () => {
+    const owner = await apiPrisma.user.create({
+      data: { email: "funding@example.com", name: "System Funding", role: "admin",
+              passwordHash: await hashPassword(password) },
+    });
+    await apiPrisma.wallet.create({
+      data: { ownerId: owner.id, isSystem: true, balanceMinor: -50_000n },
+    });
+
+    const { body } = await list("?limit=100");
+    const emails = body.users?.map((user) => user.email) ?? [];
+    expect(emails).not.toContain("funding@example.com");
+    expect(body.users?.every((user) => /^\d+$/.test(user.wallet?.balanceMinor ?? "0"))).toBe(true);
+
+    // Nor through the search, which must not reach around the exclusion.
+    const searched = await list("?search=funding");
+    expect(searched.body.users).toHaveLength(0);
+  });
+
+  it("partitions by status, with blacklisted outranking blocked", async () => {
+    const both = await createUser("both@example.com", "customer");
+    await apiPrisma.user.update({ where: { id: both.id }, data: { isBlocked: true } });
+    await apiPrisma.blacklistEntry.create({
+      data: { email: "both@example.com", reason: "Seeded for the status test" },
+    });
+    const onlyBlocked = await createUser("blocked-only@example.com", "customer");
+    await apiPrisma.user.update({ where: { id: onlyBlocked.id }, data: { isBlocked: true } });
+
+    const blacklisted = await list("?status=blacklisted&limit=100");
+    const blocked = await list("?status=blocked&limit=100");
+    const active = await list("?status=active&limit=100");
+
+    const emails = (r: Awaited<ReturnType<typeof list>>) =>
+      r.body.users?.map((user) => user.email) ?? [];
+
+    expect(emails(blacklisted)).toContain("both@example.com");
+    expect(emails(blocked)).toContain("blocked-only@example.com");
+    // An account that is both is only blacklisted: offering an unblock would not free it.
+    expect(emails(blocked)).not.toContain("both@example.com");
+    expect(emails(active)).not.toContain("both@example.com");
+    expect(emails(active)).not.toContain("blocked-only@example.com");
+
+    const all = await list("?status=all&limit=100");
+    expect(emails(all).length).toBe(emails(active).length + emails(blocked).length + emails(blacklisted).length);
+  });
+
+  it("refuses an unknown status and an unknown parameter", async () => {
+    expect((await list("?status=nonsense")).status).toBe(400);
+    expect((await list("?unexpected=1")).status).toBe(400);
+  });
+});
